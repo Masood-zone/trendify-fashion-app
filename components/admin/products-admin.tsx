@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { useMemo, useState } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import api from "@/lib/axios"
 import type { ApiResponse } from "@/types"
 import { formatDate, formatPesewas } from "@/lib/utils"
@@ -89,13 +89,29 @@ function stateOf(product: Product) {
 }
 
 export function ProductsAdmin() {
-  const [q, setQ] = useState("")
-  const [status, setStatus] = useState("ALL")
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const [q, setQ] = useState(searchParams.get("q") ?? "")
+  const [status, setStatus] = useState(searchParams.get("status") ?? "ALL")
+  const [category, setCategory] = useState(
+    searchParams.get("category") ?? "ALL"
+  )
+  const [sort, setSort] = useState(searchParams.get("sort") ?? "created-desc")
+  const [pageSize, setPageSize] = useState(
+    Number(searchParams.get("pageSize") ?? 10)
+  )
+  const [page, setPage] = useState(
+    Math.max(1, Number(searchParams.get("page") ?? 1))
+  )
   const [selected, setSelected] = useState<string[]>([])
   const [recentCutoff] = useState(() => Date.now() - 30 * 86400000)
   const query = useAdminResource<Product[]>(
     ["products", "all"],
     "/admin/products?includeArchived=true"
+  )
+  const categories = useAdminResource<Named[]>(
+    ["categories", "product-filter"],
+    "/admin/categories"
   )
   const archive = useAdminMutation<{ productIds: string[] }>({
     method: "post",
@@ -109,14 +125,41 @@ export function ProductsAdmin() {
   })
   const rows = useMemo(
     () =>
-      (query.data ?? []).filter(
-        (item) =>
-          item.name.toLowerCase().includes(q.toLowerCase()) &&
-          (status === "ALL" ||
-            stateOf(item).toUpperCase().replaceAll(" ", "_") === status)
-      ),
-    [q, query.data, status]
+      (query.data ?? [])
+        .filter(
+          (item) =>
+            item.name.toLowerCase().includes(q.toLowerCase()) &&
+            (status === "ALL" ||
+              stateOf(item).toUpperCase().replaceAll(" ", "_") === status) &&
+            (category === "ALL" ||
+              item.categories.some((entry) => entry.categoryId === category))
+        )
+        .sort((a, b) => {
+          if (sort === "name-asc") return a.name.localeCompare(b.name)
+          if (sort === "price-asc")
+            return a.basePricePesewas - b.basePricePesewas
+          if (sort === "price-desc")
+            return b.basePricePesewas - a.basePricePesewas
+          if (sort === "stock-asc") return stockOf(a) - stockOf(b)
+          if (sort === "stock-desc") return stockOf(b) - stockOf(a)
+          return sort === "created-asc"
+            ? new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+            : new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        }),
+    [category, q, query.data, sort, status]
   )
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize))
+  const currentPage = Math.min(page, totalPages)
+  const pageRows = rows.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  )
+  const updateUrl = (updates: Record<string, string | number>) => {
+    const params = new URLSearchParams(searchParams.toString())
+    for (const [key, value] of Object.entries(updates))
+      params.set(key, String(value))
+    router.replace(`/admin/products?${params.toString()}`, { scroll: false })
+  }
   if (query.isLoading) return <LoadingPanel />
   if (query.isError)
     return (
@@ -275,13 +318,21 @@ export function ProductsAdmin() {
       </div>
       <AdminListToolbar
         value={q}
-        onChange={setQ}
+        onChange={(value) => {
+          setQ(value)
+          setPage(1)
+          updateUrl({ q: value, page: 1 })
+        }}
         placeholder="Search products"
         secondary={
           <>
             <select
               value={status}
-              onChange={(event) => setStatus(event.target.value)}
+              onChange={(event) => {
+                setStatus(event.target.value)
+                setPage(1)
+                updateUrl({ status: event.target.value, page: 1 })
+              }}
               className="h-11 border border-outline-variant bg-white px-3 text-sm"
             >
               <option value="ALL">All statuses</option>
@@ -291,6 +342,38 @@ export function ProductsAdmin() {
               <option value="LOW_STOCK">Low stock</option>
               <option value="OUT_OF_STOCK">Out of stock</option>
               <option value="ARCHIVED">Archived</option>
+            </select>
+            <select
+              value={category}
+              onChange={(event) => {
+                setCategory(event.target.value)
+                setPage(1)
+                updateUrl({ category: event.target.value, page: 1 })
+              }}
+              className="h-11 border border-outline-variant bg-white px-3 text-sm"
+            >
+              <option value="ALL">All categories</option>
+              {categories.data?.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+            <select
+              value={sort}
+              onChange={(event) => {
+                setSort(event.target.value)
+                updateUrl({ sort: event.target.value })
+              }}
+              className="h-11 border border-outline-variant bg-white px-3 text-sm"
+            >
+              <option value="created-desc">Newest</option>
+              <option value="created-asc">Oldest</option>
+              <option value="name-asc">Name A-Z</option>
+              <option value="price-asc">Price low-high</option>
+              <option value="price-desc">Price high-low</option>
+              <option value="stock-asc">Stock low-high</option>
+              <option value="stock-desc">Stock high-low</option>
             </select>
             {selected.length > 0 && (
               <Button
@@ -307,12 +390,59 @@ export function ProductsAdmin() {
         }
       />
       <AdminTable
-        rows={rows}
+        rows={pageRows}
         columns={columns}
         emptyTitle="No products found"
         emptyDescription="Create a draft product or adjust the current filters."
         emptyAction={{ href: "/admin/products/new", label: "Add product" }}
       />
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm">
+        <span className="text-muted-foreground">
+          Showing {rows.length ? (currentPage - 1) * pageSize + 1 : 0}–
+          {Math.min(currentPage * pageSize, rows.length)} of {rows.length}
+        </span>
+        <div className="flex items-center gap-2">
+          <select
+            value={pageSize}
+            onChange={(event) => {
+              const value = Number(event.target.value)
+              setPageSize(value)
+              setPage(1)
+              updateUrl({ pageSize: value, page: 1 })
+            }}
+            className="h-9 border border-outline-variant bg-white px-2"
+          >
+            <option value={10}>10 rows</option>
+            <option value={25}>25 rows</option>
+            <option value={50}>50 rows</option>
+          </select>
+          <Button
+            size="xs"
+            variant="outline"
+            disabled={currentPage <= 1}
+            onClick={() => {
+              setPage(currentPage - 1)
+              updateUrl({ page: currentPage - 1 })
+            }}
+          >
+            Previous
+          </Button>
+          <span>
+            Page {currentPage} of {totalPages}
+          </span>
+          <Button
+            size="xs"
+            variant="outline"
+            disabled={currentPage >= totalPages}
+            onClick={() => {
+              setPage(currentPage + 1)
+              updateUrl({ page: currentPage + 1 })
+            }}
+          >
+            Next
+          </Button>
+        </div>
+      </div>
     </>
   )
 }
@@ -354,6 +484,7 @@ export function ProductEditor({ productId }: { productId?: string }) {
     sale: "",
     cost: "",
     status: "DRAFT",
+    publishAt: "",
     featured: false,
     newArrival: false,
     madeInGhana: true,
@@ -394,6 +525,9 @@ export function ProductEditor({ productId }: { productId?: string }) {
           ? ""
           : String(item.costPricePesewas / 100),
       status: item.status,
+      publishAt: item.publishedAt
+        ? new Date(item.publishedAt).toISOString().slice(0, 16)
+        : "",
       featured: item.featured,
       newArrival: item.newArrival,
       madeInGhana: item.madeInGhana,
@@ -438,6 +572,11 @@ export function ProductEditor({ productId }: { productId?: string }) {
       compareAtPricePesewas: sale ? regular : null,
       costPricePesewas: form.cost ? Math.round(Number(form.cost) * 100) : null,
       status: form.status,
+      publishedAt: form.publishAt
+        ? new Date(form.publishAt)
+        : form.status === "ACTIVE"
+          ? new Date()
+          : null,
       featured: form.featured,
       newArrival: form.newArrival,
       madeInGhana: form.madeInGhana,
@@ -490,6 +629,15 @@ export function ProductEditor({ productId }: { productId?: string }) {
             >
               Cancel
             </Button>
+            {productId && (
+              <Button
+                type="button"
+                variant="outline"
+                render={<Link href={`/admin/products/${productId}/preview`} />}
+              >
+                Preview
+              </Button>
+            )}
             <Button type="submit" disabled={saving}>
               {saving ? "Saving…" : "Save product"}
             </Button>
@@ -522,6 +670,13 @@ export function ProductEditor({ productId }: { productId?: string }) {
                         .replace(/^-|-$/g, "")
                     )
                 }}
+              />
+            </Field>
+            <Field label="Publish or schedule at">
+              <Input
+                type="datetime-local"
+                value={form.publishAt}
+                onChange={(e) => set("publishAt", e.target.value)}
               />
             </Field>
             <Field label="Slug">
@@ -823,6 +978,84 @@ export function ProductEditor({ productId }: { productId?: string }) {
         </aside>
       </div>
     </form>
+  )
+}
+
+export function ProductPreview({ productId }: { productId: string }) {
+  const query = useAdminResource<Product>(
+    ["product-preview", productId],
+    `/admin/products/${productId}`
+  )
+  if (query.isLoading) return <LoadingPanel />
+  if (query.isError || !query.data)
+    return <ErrorPanel message={query.error?.message ?? "Product not found"} />
+  const product = query.data
+  return (
+    <>
+      <AdminPageHeader
+        title="Protected product preview"
+        description="Draft and scheduled products remain visible only inside the administrator session."
+        actions={
+          <Button
+            variant="outline"
+            render={<Link href={`/admin/products/${product.id}/edit`} />}
+          >
+            Back to editor
+          </Button>
+        }
+      />
+      <div className="mx-auto grid max-w-5xl gap-8 bg-white p-6 md:grid-cols-2">
+        {product.media[0] ? (
+          <div className="aspect-[4/5] bg-surface-container-low">
+            {/* Cloudinary preview for administrator review. */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={product.media[0].mediaAsset.secureUrl}
+              alt={product.media[0].altText ?? product.name}
+              className="size-full object-cover"
+            />
+          </div>
+        ) : (
+          <div className="grid aspect-[4/5] place-items-center bg-surface-container-low">
+            <MaterialSymbol
+              icon="image"
+              className="text-6xl text-muted-foreground"
+            />
+          </div>
+        )}
+        <div className="py-4">
+          <StatusBadge
+            tone={stateOf(product) === "Active" ? "success" : "warning"}
+          >
+            {stateOf(product)}
+          </StatusBadge>
+          <p className="mt-6 text-xs tracking-[0.2em] text-muted-foreground uppercase">
+            {product.categories[0]?.category.name ?? "Trendify GH"}
+          </p>
+          <h1 className="mt-2 font-heading text-4xl font-semibold">
+            {product.name}
+          </h1>
+          <p className="mt-5 font-heading text-2xl">
+            {formatPesewas(product.basePricePesewas)}
+          </p>
+          <div
+            className="prose mt-8 max-w-none"
+            dangerouslySetInnerHTML={{ __html: product.description }}
+          />
+          <div className="mt-8 flex flex-wrap gap-2">
+            {product.variants.map((variant) => (
+              <span
+                key={variant.id ?? variant.sku}
+                className="border border-outline-variant px-3 py-2 text-sm"
+              >
+                {variant.sizeLabel || "One size"} ·{" "}
+                {variant.colorName || "Default"}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+    </>
   )
 }
 

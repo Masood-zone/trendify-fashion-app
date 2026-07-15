@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import { useState } from "react"
 import api from "@/lib/axios"
 import type { ApiResponse } from "@/types"
@@ -120,6 +121,14 @@ export function ContentAdmin() {
       <AdminPageHeader
         title="Content and homepage"
         description="Publish the storefront experience from persisted sections, editorial pages and catalogue navigation order."
+        actions={
+          <Button
+            variant="outline"
+            render={<Link href="/admin/content/preview" />}
+          >
+            Protected preview
+          </Button>
+        }
       />
       <div className="mb-6 flex border-b border-outline-variant">
         {(["homepage", "pages", "navigation"] as const).map((value) => (
