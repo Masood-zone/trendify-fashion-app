@@ -162,51 +162,39 @@ async function seedProducts(
     const row = await prisma.product.upsert({ where: { slug }, create: { slug, ...productData }, update: productData })
     productRows.set(slug, row.id)
 
-    await prisma.$transaction(async (tx) => {
-      const expectedVariants = variantsFor(definition, index)
-      await tx.productVariant.deleteMany({ where: { productId: row.id, sku: { notIn: expectedVariants.map((variant) => variant.sku) } } })
-      for (const variant of expectedVariants) {
-        await tx.productVariant.upsert({
-          where: { sku: variant.sku },
-          create: { productId: row.id, ...variant },
-          update: { productId: row.id, ...variant, reservedQuantity: 0, deletedAt: null },
-        })
-      }
+    const expectedVariants = variantsFor(definition, index)
+    await prisma.productVariant.deleteMany({ where: { productId: row.id, sku: { notIn: expectedVariants.map((variant) => variant.sku) } } })
+    for (const variant of expectedVariants) {
+      await prisma.productVariant.upsert({
+        where: { sku: variant.sku },
+        create: { productId: row.id, ...variant },
+        update: { productId: row.id, ...variant, reservedQuantity: 0, deletedAt: null },
+      })
+    }
 
-      const categoryIds = [maps.categoryRows.get(definition.categorySlug)!, ...(definition.categorySlug !== "footwear" && guideKeyFor(definition.categorySlug) === "clothing" ? [maps.categoryRows.get("clothing")!] : [])]
-      await tx.productCategory.deleteMany({ where: { productId: row.id, categoryId: { notIn: categoryIds } } })
-      for (const [sortOrder, categoryId] of categoryIds.entries()) {
-        await tx.productCategory.upsert({
-          where: { productId_categoryId: { productId: row.id, categoryId } },
-          create: { productId: row.id, categoryId, primary: sortOrder === 0, sortOrder },
-          update: { primary: sortOrder === 0, sortOrder },
-        })
-      }
+    const categoryIds = [maps.categoryRows.get(definition.categorySlug)!, ...(definition.categorySlug !== "footwear" && guideKeyFor(definition.categorySlug) === "clothing" ? [maps.categoryRows.get("clothing")!] : [])]
+    await prisma.productCategory.deleteMany({ where: { productId: row.id } })
+    await prisma.productCategory.createMany({ data: categoryIds.map((categoryId, sortOrder) => ({ productId: row.id, categoryId, primary: sortOrder === 0, sortOrder })) })
 
-      const collectionIds = [maps.collectionRows.get(definition.collectionSlug)!, maps.collectionRows.get("across-ghana-edit")!].filter((id, position, values) => values.indexOf(id) === position)
-      await tx.productCollection.deleteMany({ where: { productId: row.id, collectionId: { notIn: collectionIds } } })
-      for (const [sortOrder, collectionId] of collectionIds.entries()) {
-        await tx.productCollection.upsert({ where: { productId_collectionId: { productId: row.id, collectionId } }, create: { productId: row.id, collectionId, sortOrder }, update: { sortOrder } })
-      }
+    const collectionIds = [maps.collectionRows.get(definition.collectionSlug)!, maps.collectionRows.get("across-ghana-edit")!].filter((id, position, values) => values.indexOf(id) === position)
+    await prisma.productCollection.deleteMany({ where: { productId: row.id } })
+    await prisma.productCollection.createMany({ data: collectionIds.map((collectionId, sortOrder) => ({ productId: row.id, collectionId, sortOrder })) })
 
-      const tagIds = [maps.tagRows.get("made-in-ghana")!, maps.tagRows.get("handcrafted")!, ...definition.tagSlugs.map((tag) => maps.tagRows.get(tag)!)].filter((id, position, values) => values.indexOf(id) === position)
-      await tx.productTag.deleteMany({ where: { productId: row.id, tagId: { notIn: tagIds } } })
-      for (const tagId of tagIds) {
-        await tx.productTag.upsert({ where: { productId_tagId: { productId: row.id, tagId } }, create: { productId: row.id, tagId }, update: {} })
-      }
+    const tagIds = [maps.tagRows.get("made-in-ghana")!, maps.tagRows.get("handcrafted")!, ...definition.tagSlugs.map((tag) => maps.tagRows.get(tag)!)].filter((id, position, values) => values.indexOf(id) === position)
+    await prisma.productTag.deleteMany({ where: { productId: row.id } })
+    await prisma.productTag.createMany({ data: tagIds.map((tagId) => ({ productId: row.id, tagId })) })
 
-      const expectedMediaIds = [mediaIds[index * 2], mediaIds[index * 2 + 1]]
-      await tx.productMedia.deleteMany({ where: { productId: row.id, mediaAssetId: { notIn: expectedMediaIds } } })
-      await tx.productMedia.updateMany({ where: { productId: row.id }, data: { primary: false } })
-      for (const [sortOrder, mediaAssetId] of expectedMediaIds.entries()) {
-        await tx.productMedia.upsert({
-          where: { productId_mediaAssetId: { productId: row.id, mediaAssetId } },
-          create: { productId: row.id, mediaAssetId, altText: `${definition.name} ${sortOrder === 0 ? "front view" : "detail view"}`, sortOrder, primary: false },
-          update: { variantId: null, altText: `${definition.name} ${sortOrder === 0 ? "front view" : "detail view"}`, sortOrder, primary: false },
-        })
-      }
-      await tx.productMedia.update({ where: { productId_mediaAssetId: { productId: row.id, mediaAssetId: expectedMediaIds[0] } }, data: { primary: true } })
-    })
+    const expectedMediaIds = [mediaIds[index * 2], mediaIds[index * 2 + 1]]
+    await prisma.productMedia.deleteMany({ where: { productId: row.id, mediaAssetId: { notIn: expectedMediaIds } } })
+    await prisma.productMedia.updateMany({ where: { productId: row.id }, data: { primary: false } })
+    for (const [sortOrder, mediaAssetId] of expectedMediaIds.entries()) {
+      await prisma.productMedia.upsert({
+        where: { productId_mediaAssetId: { productId: row.id, mediaAssetId } },
+        create: { productId: row.id, mediaAssetId, altText: `${definition.name} ${sortOrder === 0 ? "front view" : "detail view"}`, sortOrder, primary: false },
+        update: { variantId: null, altText: `${definition.name} ${sortOrder === 0 ? "front view" : "detail view"}`, sortOrder, primary: false },
+      })
+    }
+    await prisma.productMedia.update({ where: { productId_mediaAssetId: { productId: row.id, mediaAssetId: expectedMediaIds[0] } }, data: { primary: true } })
   }
   return productRows
 }
@@ -286,7 +274,7 @@ async function seedHomepage(
       create: { key: definition.key, type: definition.type, heading: definition.heading, eyebrow: definition.eyebrow, body: definition.body, ctaLabel: definition.ctaLabel, ctaHref: definition.ctaHref, mediaAssetId: definition.media == null ? null : editorialMediaIds[definition.media], status: "PUBLISHED", enabled: true, sortOrder, config: { simulation: true }, publishedAt: SIMULATION_PUBLISHED_AT },
       update: { type: definition.type, heading: definition.heading, eyebrow: definition.eyebrow, body: definition.body, ctaLabel: definition.ctaLabel, ctaHref: definition.ctaHref, mediaAssetId: definition.media == null ? null : editorialMediaIds[definition.media], status: "PUBLISHED", enabled: true, sortOrder, config: { simulation: true }, publishedAt: SIMULATION_PUBLISHED_AT, deletedAt: null },
     })
-    await prisma.$transaction([
+    await Promise.all([
       prisma.homepageSectionItem.deleteMany({ where: { sectionId: section.id } }),
       prisma.homepageSectionProduct.deleteMany({ where: { sectionId: section.id } }),
       prisma.homepageSectionCategory.deleteMany({ where: { sectionId: section.id } }),
