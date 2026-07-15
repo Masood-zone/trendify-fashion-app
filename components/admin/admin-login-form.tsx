@@ -3,10 +3,21 @@
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
+import { zodResolver } from "@hookform/resolvers/zod"
+import { useForm } from "react-hook-form"
+import { z } from "zod"
 
 import { MaterialSymbol } from "@/components/common/MaterialSymbol"
 import { Button } from "@/components/ui/button"
 import { authClient } from "@/lib/auth-client"
+
+const adminLoginSchema = z.object({
+  email: z.string().trim().email("Enter a valid email address"),
+  password: z.string().min(8, "Password must contain at least 8 characters"),
+  rememberMe: z.boolean(),
+})
+
+type AdminLoginValues = z.infer<typeof adminLoginSchema>
 
 export function AdminLoginForm({
   callbackURL = "/admin",
@@ -14,22 +25,25 @@ export function AdminLoginForm({
   callbackURL?: string
 }) {
   const router = useRouter()
-  const [email, setEmail] = useState("")
-  const [password, setPassword] = useState("")
-  const [rememberMe, setRememberMe] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
-  const [error, setError] = useState("")
-  const [loading, setLoading] = useState(false)
+  const {
+    register,
+    handleSubmit,
+    clearErrors,
+    setError,
+    formState: { errors, isSubmitting },
+  } = useForm<AdminLoginValues>({
+    resolver: zodResolver(adminLoginSchema),
+    defaultValues: { email: "", password: "", rememberMe: false },
+  })
 
-  async function submit(event: React.FormEvent) {
-    event.preventDefault()
-    setError("")
-    setLoading(true)
+  async function submit(values: AdminLoginValues) {
+    clearErrors("root")
     try {
       const result = await authClient.signIn.email({
-        email,
-        password,
-        rememberMe,
+        email: values.email.toLowerCase(),
+        password: values.password,
+        rememberMe: values.rememberMe,
       })
       if (result.error) throw new Error("Invalid administrator credentials")
       const session = await authClient.getSession()
@@ -40,14 +54,14 @@ export function AdminLoginForm({
       router.replace(callbackURL.startsWith("/admin") ? callbackURL : "/admin")
       router.refresh()
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Login failed")
-    } finally {
-      setLoading(false)
+      setError("root", {
+        message: caught instanceof Error ? caught.message : "Login failed",
+      })
     }
   }
 
   return (
-    <form onSubmit={submit} className="space-y-7">
+    <form onSubmit={handleSubmit(submit)} className="space-y-7" noValidate>
       <div>
         <label
           htmlFor="admin-email"
@@ -63,14 +77,18 @@ export function AdminLoginForm({
           <input
             id="admin-email"
             type="email"
-            required
             autoComplete="email"
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
+            aria-invalid={Boolean(errors.email)}
+            {...register("email")}
             className="h-14 w-full border border-outline-variant bg-white pr-4 pl-12 outline-none focus:border-kente-gold"
             placeholder="admin@fashiontrendify.gh"
           />
         </div>
+        {errors.email && (
+          <p className="mt-2 text-sm text-error" role="alert">
+            {errors.email.message}
+          </p>
+        )}
       </div>
       <div>
         <label
@@ -87,10 +105,9 @@ export function AdminLoginForm({
           <input
             id="admin-password"
             type={showPassword ? "text" : "password"}
-            required
             autoComplete="current-password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
+            aria-invalid={Boolean(errors.password)}
+            {...register("password")}
             className="h-14 w-full border border-outline-variant bg-white pr-12 pl-12 outline-none focus:border-kente-gold"
             placeholder="••••••••••••"
           />
@@ -105,13 +122,17 @@ export function AdminLoginForm({
             />
           </button>
         </div>
+        {errors.password && (
+          <p className="mt-2 text-sm text-error" role="alert">
+            {errors.password.message}
+          </p>
+        )}
       </div>
       <div className="flex items-center justify-between gap-4 text-sm">
         <label className="flex items-center gap-2">
           <input
             type="checkbox"
-            checked={rememberMe}
-            onChange={(event) => setRememberMe(event.target.checked)}
+            {...register("rememberMe")}
             className="size-4 accent-black"
           />
           Remember me
@@ -123,20 +144,20 @@ export function AdminLoginForm({
           Forgot password?
         </Link>
       </div>
-      {error && (
+      {errors.root?.message && (
         <p
           role="alert"
           className="bg-error-container border border-error/30 px-4 py-3 text-sm text-error"
         >
-          {error}
+          {errors.root.message}
         </p>
       )}
       <Button
         type="submit"
-        disabled={loading}
+        disabled={isSubmitting}
         className="h-14 w-full bg-heritage-burgundy text-white hover:bg-heritage-burgundy/90"
       >
-        {loading ? "Signing in…" : "Secure Admin Login"}
+        {isSubmitting ? "Signing in…" : "Secure Admin Login"}
         <MaterialSymbol icon="shield_lock" />
       </Button>
     </form>

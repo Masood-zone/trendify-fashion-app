@@ -13,7 +13,7 @@ export async function GET(request: Request) {
       Math.max(1, Number(params.get("pageSize")) || 20)
     )
     const where = { userId: guard.session.user.id }
-    const [items, total] = await prisma.$transaction([
+    const [items, total] = await Promise.all([
       prisma.order.findMany({
         where,
         include: {

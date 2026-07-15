@@ -4,8 +4,11 @@ import Image from "next/image"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useState } from "react"
+import { zodResolver } from "@hookform/resolvers/zod"
 import { Eye, EyeOff } from "lucide-react"
+import { useForm, useWatch } from "react-hook-form"
 import { toast } from "sonner"
+import { z } from "zod"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -15,6 +18,55 @@ import { normalizeGhanaPhone, safeInternalPath } from "@/lib/safe-redirect"
 
 const loginImage =
   "https://lh3.googleusercontent.com/aida-public/AB6AXuBZsNCbJVA7MwV-Zzwhvoa_hqvkYAKOjm1kE04fy8o3dZUUonDeIf7rR9L8m9O-U8V2l0RKH9jm19umTsZJxqIL8WEIqtCWLWTOFG2qktX0wEh4a65JKFRsJOLBy3RTod4qqY3aiAcLzSpMcWAkHoLC1lN2eNoVKcLqmKjhb-Q4VMAXG0LoL35M9WFMIlBcubIA9bQ8eRIkAATyExmGhNAI1ttTA6CvYUqoKBr4SF0hE7lxLuj1Ihd6Fg"
+
+const loginSchema = z.object({
+  identity: z.string().trim().min(1, "Enter your email or phone number"),
+  password: z.string().min(8, "Password must contain at least 8 characters"),
+  rememberMe: z.boolean(),
+})
+
+const registerSchema = z
+  .object({
+    firstName: z.string().trim().min(1, "Enter your first name"),
+    lastName: z.string().trim().min(1, "Enter your last name"),
+    email: z.string().trim().email("Enter a valid email address"),
+    phoneNumber: z.string().trim(),
+    password: z.string().min(8, "Password must contain at least 8 characters"),
+    confirmation: z.string(),
+    terms: z.boolean().refine(Boolean, {
+      message: "Accept the terms to continue",
+    }),
+  })
+  .refine((values) => values.password === values.confirmation, {
+    path: ["confirmation"],
+    message: "Passwords do not match",
+  })
+
+const verifyEmailSchema = z.object({
+  email: z.string().trim().email("Enter a valid email address"),
+  otp: z.string().regex(/^\d{6}$/, "Enter the six-digit verification code"),
+})
+
+const passwordRequestSchema = z.object({
+  email: z.string().trim().email("Enter a valid email address"),
+})
+
+const passwordResetSchema = z
+  .object({
+    otp: z.string().regex(/^\d{6}$/, "Enter the six-digit reset code"),
+    password: z.string().min(8, "Password must contain at least 8 characters"),
+    confirmation: z.string(),
+  })
+  .refine((values) => values.password === values.confirmation, {
+    path: ["confirmation"],
+    message: "Passwords do not match",
+  })
+
+type LoginValues = z.infer<typeof loginSchema>
+type RegisterValues = z.infer<typeof registerSchema>
+type VerifyEmailValues = z.infer<typeof verifyEmailSchema>
+type PasswordRequestValues = z.infer<typeof passwordRequestSchema>
+type PasswordResetValues = z.infer<typeof passwordResetSchema>
 
 function AuthFrame({
   children,
@@ -64,12 +116,50 @@ function AuthFrame({
 export function LoginForm() {
   const router = useRouter()
   const params = useSearchParams()
-  const [identity, setIdentity] = useState("")
-  const [password, setPassword] = useState("")
-  const [rememberMe, setRememberMe] = useState(true)
   const [show, setShow] = useState(false)
-  const [saving, setSaving] = useState(false)
   const callback = safeInternalPath(params.get("callbackURL"), "/account")
+  const form = useForm<LoginValues>({
+    resolver: zodResolver(loginSchema),
+    defaultValues: { identity: "", password: "", rememberMe: true },
+  })
+
+  async function submit(values: LoginValues) {
+    form.clearErrors("root")
+    try {
+      const phone = !values.identity.includes("@")
+      const result = phone
+        ? await authClient.signIn.phoneNumber({
+            phoneNumber: normalizeGhanaPhone(values.identity),
+            password: values.password,
+            rememberMe: values.rememberMe,
+          })
+        : await authClient.signIn.email({
+            email: values.identity.toLowerCase(),
+            password: values.password,
+            rememberMe: values.rememberMe,
+          })
+      if (result.error) {
+        form.setError("root", {
+          message: result.error.message || "Login failed",
+        })
+        return
+      }
+      if (result.data?.user.role !== "CUSTOMER") {
+        await authClient.signOut()
+        form.setError("root", {
+          message: "Use the administrator login for this account",
+        })
+        return
+      }
+      router.push(callback)
+      router.refresh()
+    } catch {
+      form.setError("root", {
+        message: "Login could not be completed. Please try again.",
+      })
+    }
+  }
+
   return (
     <AuthFrame title="Akwaaba.">
       <p className="mt-2 text-muted-foreground">
@@ -77,54 +167,32 @@ export function LoginForm() {
       </p>
       <form
         className="mt-10 space-y-6"
-        onSubmit={async (event) => {
-          event.preventDefault()
-          setSaving(true)
-          const phone = !identity.includes("@")
-          const result = phone
-            ? await authClient.signIn.phoneNumber({
-                phoneNumber: normalizeGhanaPhone(identity),
-                password,
-                rememberMe,
-              })
-            : await authClient.signIn.email({
-                email: identity.trim().toLowerCase(),
-                password,
-                rememberMe,
-              })
-          setSaving(false)
-          if (result.error)
-            return toast.error(result.error.message || "Login failed")
-          if (result.data?.user.role !== "CUSTOMER") {
-            await authClient.signOut()
-            return toast.error("Use the administrator login for this account")
-          }
-          router.push(callback)
-          router.refresh()
-        }}
+        onSubmit={form.handleSubmit(submit)}
+        noValidate
       >
-        <Field label="Email or phone number">
+        <Field
+          label="Email or phone number"
+          error={form.formState.errors.identity?.message}
+        >
           <Input
-            required
-            value={identity}
-            onChange={(event) => setIdentity(event.target.value)}
             autoComplete="username"
+            aria-invalid={Boolean(form.formState.errors.identity)}
+            {...form.register("identity")}
           />
         </Field>
-        <Field label="Password">
+        <Field label="Password" error={form.formState.errors.password?.message}>
           <div className="relative">
             <Input
-              required
-              minLength={8}
               type={show ? "text" : "password"}
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
               autoComplete="current-password"
+              aria-invalid={Boolean(form.formState.errors.password)}
+              {...form.register("password")}
             />
             <button
               type="button"
               className="absolute inset-y-0 right-3"
               onClick={() => setShow((value) => !value)}
+              aria-label={show ? "Hide password" : "Show password"}
             >
               {show ? (
                 <EyeOff className="size-4" />
@@ -136,19 +204,21 @@ export function LoginForm() {
         </Field>
         <div className="flex items-center justify-between text-sm">
           <label className="flex gap-2">
-            <input
-              type="checkbox"
-              checked={rememberMe}
-              onChange={(event) => setRememberMe(event.target.checked)}
-            />{" "}
-            Remember me
+            <input type="checkbox" {...form.register("rememberMe")} /> Remember
+            me
           </label>
           <Link href="/forgot-password" className="underline">
             Forgot password?
           </Link>
         </div>
-        <Button type="submit" size="lg" className="w-full" disabled={saving}>
-          {saving ? "Signing in…" : "Login"}
+        <FormError message={form.formState.errors.root?.message} />
+        <Button
+          type="submit"
+          size="lg"
+          className="w-full"
+          disabled={form.formState.isSubmitting}
+        >
+          {form.formState.isSubmitting ? "Signing in…" : "Login"}
         </Button>
       </form>
       <p className="mt-8 text-center text-sm">
@@ -168,18 +238,58 @@ export function RegisterForm() {
   const router = useRouter()
   const params = useSearchParams()
   const callback = safeInternalPath(params.get("callbackURL"), "/account")
-  const [form, setForm] = useState({
-    firstName: "",
-    lastName: "",
-    email: "",
-    phoneNumber: "",
-    password: "",
-    confirmation: "",
+  const form = useForm<RegisterValues>({
+    resolver: zodResolver(registerSchema),
+    defaultValues: {
+      firstName: "",
+      lastName: "",
+      email: "",
+      phoneNumber: "",
+      password: "",
+      confirmation: "",
+      terms: false,
+    },
   })
-  const [terms, setTerms] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const set = (key: keyof typeof form, value: string) =>
-    setForm((current) => ({ ...current, [key]: value }))
+
+  async function submit(values: RegisterValues) {
+    form.clearErrors("root")
+    try {
+      const email = values.email.toLowerCase()
+      const result = await authClient.signUp.email({
+        name: `${values.firstName} ${values.lastName}`,
+        email,
+        password: values.password,
+      })
+      if (result.error) {
+        form.setError("root", {
+          message: result.error.message || "Account could not be created",
+        })
+        return
+      }
+      sessionStorage.setItem(
+        "trendify_pending_verification",
+        JSON.stringify({ email, callback })
+      )
+      sessionStorage.setItem(
+        "trendify_pending_profile",
+        JSON.stringify({
+          firstName: values.firstName,
+          lastName: values.lastName,
+          phoneNumber: values.phoneNumber
+            ? normalizeGhanaPhone(values.phoneNumber)
+            : undefined,
+        })
+      )
+      router.push(
+        `/verify-email?email=${encodeURIComponent(email)}&callbackURL=${encodeURIComponent(callback)}`
+      )
+    } catch {
+      form.setError("root", {
+        message: "Account creation could not be completed. Please try again.",
+      })
+    }
+  }
+
   return (
     <AuthFrame title="Create Account">
       <p className="mt-2 text-muted-foreground">
@@ -187,108 +297,96 @@ export function RegisterForm() {
       </p>
       <form
         className="mt-8 grid gap-5 sm:grid-cols-2"
-        onSubmit={async (event) => {
-          event.preventDefault()
-          if (form.password !== form.confirmation)
-            return toast.error("Passwords do not match")
-          if (!terms) return toast.error("Please accept the terms to continue")
-          setSaving(true)
-          const email = form.email.trim().toLowerCase()
-          const result = await authClient.signUp.email({
-            name: `${form.firstName} ${form.lastName}`,
-            email,
-            password: form.password,
-          })
-          setSaving(false)
-          if (result.error)
-            return toast.error(
-              result.error.message || "Account could not be created"
-            )
-          sessionStorage.setItem(
-            "trendify_pending_verification",
-            JSON.stringify({ email, callback })
-          )
-          sessionStorage.setItem(
-            "trendify_pending_profile",
-            JSON.stringify({
-              firstName: form.firstName,
-              lastName: form.lastName,
-              phoneNumber: form.phoneNumber
-                ? normalizeGhanaPhone(form.phoneNumber)
-                : undefined,
-            })
-          )
-          router.push(
-            `/verify-email?email=${encodeURIComponent(email)}&callbackURL=${encodeURIComponent(callback)}`
-          )
-        }}
+        onSubmit={form.handleSubmit(submit)}
+        noValidate
       >
-        <Field label="First name">
+        <Field
+          label="First name"
+          error={form.formState.errors.firstName?.message}
+        >
           <Input
-            required
-            value={form.firstName}
-            onChange={(event) => set("firstName", event.target.value)}
+            autoComplete="given-name"
+            aria-invalid={Boolean(form.formState.errors.firstName)}
+            {...form.register("firstName")}
           />
         </Field>
-        <Field label="Last name">
+        <Field
+          label="Last name"
+          error={form.formState.errors.lastName?.message}
+        >
           <Input
-            required
-            value={form.lastName}
-            onChange={(event) => set("lastName", event.target.value)}
+            autoComplete="family-name"
+            aria-invalid={Boolean(form.formState.errors.lastName)}
+            {...form.register("lastName")}
           />
         </Field>
         <div className="sm:col-span-2">
-          <Field label="Email address">
+          <Field
+            label="Email address"
+            error={form.formState.errors.email?.message}
+          >
             <Input
-              required
               type="email"
-              value={form.email}
-              onChange={(event) => set("email", event.target.value)}
+              autoComplete="email"
+              aria-invalid={Boolean(form.formState.errors.email)}
+              {...form.register("email")}
             />
           </Field>
         </div>
         <div className="sm:col-span-2">
-          <Field label="Ghanaian phone number (optional)">
+          <Field
+            label="Ghanaian phone number (optional)"
+            error={form.formState.errors.phoneNumber?.message}
+          >
             <Input
-              value={form.phoneNumber}
-              onChange={(event) => set("phoneNumber", event.target.value)}
+              type="tel"
+              autoComplete="tel"
               placeholder="024 123 4567"
+              aria-invalid={Boolean(form.formState.errors.phoneNumber)}
+              {...form.register("phoneNumber")}
             />
           </Field>
         </div>
-        <Field label="Password">
+        <Field label="Password" error={form.formState.errors.password?.message}>
           <Input
-            required
             type="password"
-            minLength={8}
-            value={form.password}
-            onChange={(event) => set("password", event.target.value)}
+            autoComplete="new-password"
+            aria-invalid={Boolean(form.formState.errors.password)}
+            {...form.register("password")}
           />
         </Field>
-        <Field label="Confirm password">
+        <Field
+          label="Confirm password"
+          error={form.formState.errors.confirmation?.message}
+        >
           <Input
-            required
             type="password"
-            minLength={8}
-            value={form.confirmation}
-            onChange={(event) => set("confirmation", event.target.value)}
+            autoComplete="new-password"
+            aria-invalid={Boolean(form.formState.errors.confirmation)}
+            {...form.register("confirmation")}
           />
         </Field>
-        <label className="flex gap-3 text-sm sm:col-span-2">
-          <input
-            type="checkbox"
-            checked={terms}
-            onChange={(event) => setTerms(event.target.checked)}
-          />{" "}
-          I agree to the Terms of Service and Privacy Policy.
-        </label>
+        <div className="sm:col-span-2">
+          <label className="flex gap-3 text-sm">
+            <input type="checkbox" {...form.register("terms")} />I agree to the
+            Terms of Service and Privacy Policy.
+          </label>
+          {form.formState.errors.terms && (
+            <p className="mt-2 text-sm text-error" role="alert">
+              {form.formState.errors.terms.message}
+            </p>
+          )}
+        </div>
+        <div className="sm:col-span-2">
+          <FormError message={form.formState.errors.root?.message} />
+        </div>
         <Button
           type="submit"
           size="lg"
           className="sm:col-span-2"
-          disabled={saving}
+          disabled={form.formState.isSubmitting}
         >
-          {saving ? "Creating account…" : "Create account"}
+          {form.formState.isSubmitting ? "Creating account…" : "Create account"}
         </Button>
       </form>
       <p className="mt-7 text-center text-sm">
@@ -304,10 +402,62 @@ export function RegisterForm() {
 export function VerifyEmailForm() {
   const router = useRouter()
   const params = useSearchParams()
-  const [email, setEmail] = useState(params.get("email") || "")
-  const [otp, setOtp] = useState("")
-  const [saving, setSaving] = useState(false)
   const callback = safeInternalPath(params.get("callbackURL"), "/account")
+  const form = useForm<VerifyEmailValues>({
+    resolver: zodResolver(verifyEmailSchema),
+    defaultValues: { email: params.get("email") || "", otp: "" },
+  })
+  const otp = useWatch({ control: form.control, name: "otp" })
+
+  async function submit(values: VerifyEmailValues) {
+    form.clearErrors("root")
+    try {
+      const result = await authClient.emailOtp.verifyEmail({
+        email: values.email.toLowerCase(),
+        otp: values.otp,
+      })
+      if (result.error) {
+        form.setError("root", {
+          message: result.error.message || "Verification failed",
+        })
+        return
+      }
+      try {
+        const pendingProfile = JSON.parse(
+          sessionStorage.getItem("trendify_pending_profile") || "null"
+        )
+        if (pendingProfile) await api.patch("/customer/profile", pendingProfile)
+        sessionStorage.removeItem("trendify_pending_profile")
+        sessionStorage.removeItem("trendify_pending_verification")
+      } catch {
+        toast.warning(
+          "Your email is verified. Complete the remaining profile details in account settings."
+        )
+      }
+      router.push(callback)
+      router.refresh()
+    } catch {
+      form.setError("root", {
+        message: "Verification could not be completed. Please try again.",
+      })
+    }
+  }
+
+  async function resendCode() {
+    const emailIsValid = await form.trigger("email")
+    if (!emailIsValid) return
+    try {
+      const result = await authClient.emailOtp.sendVerificationOtp({
+        email: form.getValues("email").toLowerCase(),
+        type: "email-verification",
+      })
+      if (result.error) toast.error(result.error.message)
+      else toast.success("A new code has been sent")
+    } catch {
+      toast.error("A new code could not be sent. Please try again.")
+    }
+  }
+
   return (
     <AuthFrame title="Verify your email">
       <p className="mt-2 text-muted-foreground">
@@ -315,73 +465,45 @@ export function VerifyEmailForm() {
       </p>
       <form
         className="mt-10 space-y-6"
-        onSubmit={async (event) => {
-          event.preventDefault()
-          setSaving(true)
-          const result = await authClient.emailOtp.verifyEmail({
-            email: email.toLowerCase(),
-            otp,
-          })
-          if (!result.error) {
-            try {
-              const pendingProfile = JSON.parse(
-                sessionStorage.getItem("trendify_pending_profile") || "null"
-              )
-              if (pendingProfile)
-                await api.patch("/customer/profile", pendingProfile)
-              sessionStorage.removeItem("trendify_pending_profile")
-              sessionStorage.removeItem("trendify_pending_verification")
-            } catch {
-              toast.warning(
-                "Your email is verified. Complete the remaining profile details in account settings."
-              )
-            }
-          }
-          setSaving(false)
-          if (result.error)
-            return toast.error(result.error.message || "Verification failed")
-          router.push(callback)
-          router.refresh()
-        }}
+        onSubmit={form.handleSubmit(submit)}
+        noValidate
       >
-        <Field label="Email">
+        <Field label="Email" error={form.formState.errors.email?.message}>
           <Input
-            required
             type="email"
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
+            autoComplete="email"
+            aria-invalid={Boolean(form.formState.errors.email)}
+            {...form.register("email")}
           />
         </Field>
-        <Field label="Verification code">
+        <Field
+          label="Verification code"
+          error={form.formState.errors.otp?.message}
+        >
           <Input
-            required
             inputMode="numeric"
-            pattern="[0-9]{6}"
             maxLength={6}
+            autoComplete="one-time-code"
             className="text-center text-2xl tracking-[0.5em]"
-            value={otp}
-            onChange={(event) => setOtp(event.target.value.replace(/\D/g, ""))}
+            aria-invalid={Boolean(form.formState.errors.otp)}
+            {...form.register("otp")}
+            onInput={digitsOnly}
           />
         </Field>
+        <FormError message={form.formState.errors.root?.message} />
         <Button
           type="submit"
           size="lg"
           className="w-full"
-          disabled={saving || otp.length !== 6}
+          disabled={form.formState.isSubmitting || otp.length !== 6}
         >
-          {saving ? "Verifying…" : "Verify email"}
+          {form.formState.isSubmitting ? "Verifying…" : "Verify email"}
         </Button>
       </form>
       <button
+        type="button"
         className="mt-6 w-full text-center text-sm underline"
-        onClick={async () => {
-          const result = await authClient.emailOtp.sendVerificationOtp({
-            email: email.toLowerCase(),
-            type: "email-verification",
-          })
-          if (result.error) toast.error(result.error.message)
-          else toast.success("A new code has been sent")
-        }}
+        onClick={resendCode}
       >
         Resend code
       </button>
@@ -392,11 +514,56 @@ export function VerifyEmailForm() {
 export function ForgotPasswordForm() {
   const router = useRouter()
   const [step, setStep] = useState<"request" | "reset">("request")
-  const [email, setEmail] = useState("")
-  const [otp, setOtp] = useState("")
-  const [password, setPassword] = useState("")
-  const [confirmation, setConfirmation] = useState("")
-  const [saving, setSaving] = useState(false)
+  const requestForm = useForm<PasswordRequestValues>({
+    resolver: zodResolver(passwordRequestSchema),
+    defaultValues: { email: "" },
+  })
+  const resetForm = useForm<PasswordResetValues>({
+    resolver: zodResolver(passwordResetSchema),
+    defaultValues: { otp: "", password: "", confirmation: "" },
+  })
+  const otp = useWatch({ control: resetForm.control, name: "otp" })
+
+  async function requestCode(values: PasswordRequestValues) {
+    requestForm.clearErrors("root")
+    try {
+      const result = await authClient.emailOtp.requestPasswordReset({
+        email: values.email.toLowerCase(),
+      })
+      if (result.error) {
+        requestForm.setError("root", { message: result.error.message })
+        return
+      }
+      setStep("reset")
+      toast.success("Check your email for the reset code")
+    } catch {
+      requestForm.setError("root", {
+        message: "The reset request could not be completed. Please try again.",
+      })
+    }
+  }
+
+  async function resetPassword(values: PasswordResetValues) {
+    resetForm.clearErrors("root")
+    try {
+      const result = await authClient.emailOtp.resetPassword({
+        email: requestForm.getValues("email").toLowerCase(),
+        otp: values.otp,
+        password: values.password,
+      })
+      if (result.error) {
+        resetForm.setError("root", { message: result.error.message })
+        return
+      }
+      toast.success("Password updated. You can now sign in.")
+      router.push("/login")
+    } catch {
+      resetForm.setError("root", {
+        message: "The password could not be updated. Please try again.",
+      })
+    }
+  }
+
   return (
     <AuthFrame title="Reset your password">
       {step === "request" ? (
@@ -406,33 +573,30 @@ export function ForgotPasswordForm() {
           </p>
           <form
             className="mt-10 space-y-6"
-            onSubmit={async (event) => {
-              event.preventDefault()
-              setSaving(true)
-              const result = await authClient.emailOtp.requestPasswordReset({
-                email: email.toLowerCase(),
-              })
-              setSaving(false)
-              if (result.error) return toast.error(result.error.message)
-              setStep("reset")
-              toast.success("Check your email for the reset code")
-            }}
+            onSubmit={requestForm.handleSubmit(requestCode)}
+            noValidate
           >
-            <Field label="Email address">
+            <Field
+              label="Email address"
+              error={requestForm.formState.errors.email?.message}
+            >
               <Input
-                required
                 type="email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
+                autoComplete="email"
+                aria-invalid={Boolean(requestForm.formState.errors.email)}
+                {...requestForm.register("email")}
               />
             </Field>
+            <FormError message={requestForm.formState.errors.root?.message} />
             <Button
               type="submit"
               size="lg"
               className="w-full"
-              disabled={saving}
+              disabled={requestForm.formState.isSubmitting}
             >
-              {saving ? "Sending…" : "Send reset code"}
+              {requestForm.formState.isSubmitting
+                ? "Sending…"
+                : "Send reset code"}
             </Button>
           </form>
         </>
@@ -443,58 +607,54 @@ export function ForgotPasswordForm() {
           </p>
           <form
             className="mt-10 space-y-5"
-            onSubmit={async (event) => {
-              event.preventDefault()
-              if (password !== confirmation)
-                return toast.error("Passwords do not match")
-              setSaving(true)
-              const result = await authClient.emailOtp.resetPassword({
-                email: email.toLowerCase(),
-                otp,
-                password,
-              })
-              setSaving(false)
-              if (result.error) return toast.error(result.error.message)
-              toast.success("Password updated. You can now sign in.")
-              router.push("/login")
-            }}
+            onSubmit={resetForm.handleSubmit(resetPassword)}
+            noValidate
           >
-            <Field label="Reset code">
+            <Field
+              label="Reset code"
+              error={resetForm.formState.errors.otp?.message}
+            >
               <Input
-                required
                 maxLength={6}
                 inputMode="numeric"
-                value={otp}
-                onChange={(event) =>
-                  setOtp(event.target.value.replace(/\D/g, ""))
-                }
+                autoComplete="one-time-code"
+                aria-invalid={Boolean(resetForm.formState.errors.otp)}
+                {...resetForm.register("otp")}
+                onInput={digitsOnly}
               />
             </Field>
-            <Field label="New password">
+            <Field
+              label="New password"
+              error={resetForm.formState.errors.password?.message}
+            >
               <Input
-                required
                 type="password"
-                minLength={8}
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
+                autoComplete="new-password"
+                aria-invalid={Boolean(resetForm.formState.errors.password)}
+                {...resetForm.register("password")}
               />
             </Field>
-            <Field label="Confirm password">
+            <Field
+              label="Confirm password"
+              error={resetForm.formState.errors.confirmation?.message}
+            >
               <Input
-                required
                 type="password"
-                minLength={8}
-                value={confirmation}
-                onChange={(event) => setConfirmation(event.target.value)}
+                autoComplete="new-password"
+                aria-invalid={Boolean(resetForm.formState.errors.confirmation)}
+                {...resetForm.register("confirmation")}
               />
             </Field>
+            <FormError message={resetForm.formState.errors.root?.message} />
             <Button
               type="submit"
               size="lg"
               className="w-full"
-              disabled={saving || otp.length !== 6}
+              disabled={resetForm.formState.isSubmitting || otp.length !== 6}
             >
-              {saving ? "Updating…" : "Reset password"}
+              {resetForm.formState.isSubmitting
+                ? "Updating…"
+                : "Reset password"}
             </Button>
           </form>
         </>
@@ -503,17 +663,40 @@ export function ForgotPasswordForm() {
   )
 }
 
+function digitsOnly(event: React.FormEvent<HTMLInputElement>) {
+  event.currentTarget.value = event.currentTarget.value.replace(/\D/g, "")
+}
+
+function FormError({ message }: { message?: string }) {
+  if (!message) return null
+  return (
+    <p
+      className="bg-error-container border border-error/30 px-4 py-3 text-sm text-error"
+      role="alert"
+    >
+      {message}
+    </p>
+  )
+}
+
 function Field({
   label,
   children,
+  error,
 }: {
   label: string
   children: React.ReactNode
+  error?: string
 }) {
   return (
     <label className="block text-sm font-medium">
       {label}
       <div className="mt-2">{children}</div>
+      {error && (
+        <span className="mt-2 block text-sm text-error" role="alert">
+          {error}
+        </span>
+      )}
     </label>
   )
 }

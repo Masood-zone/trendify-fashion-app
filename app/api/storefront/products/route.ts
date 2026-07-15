@@ -54,7 +54,7 @@ export async function GET(request: Request) {
           : params.get("sort") === "name-asc"
             ? { name: "asc" as const }
             : { publishedAt: "desc" as const }
-    const [items, total, brands, variants] = await prisma.$transaction([
+    const [items, total, brands, variants] = await Promise.all([
       prisma.product.findMany({
         where,
         include: publicProductInclude,

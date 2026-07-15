@@ -171,6 +171,7 @@ model User {
   auditLogs        AuditLog[]            @relation("AuditActor")
 
   @@index([role])
+  @@index([role, deletedAt, createdAt])
   @@index([banned])
   @@index([deletedAt])
   @@map("user")
@@ -672,6 +673,7 @@ model PromotionRedemption {
   user      User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([promotionId, redeemedAt])
+  @@index([redeemedAt])
   @@index([userId])
 }
 
@@ -747,6 +749,7 @@ model Order {
 
   @@index([userId, createdAt])
   @@index([email, createdAt])
+  @@index([createdAt])
   @@index([status, createdAt])
   @@index([status, reservationExpiresAt])
   @@index([promotionId])
@@ -826,7 +829,9 @@ model Payment {
   order Order @relation(fields: [orderId], references: [id], onDelete: Restrict)
 
   @@index([orderId, createdAt])
+  @@index([createdAt])
   @@index([status, createdAt])
+  @@index([status, paidAt])
   @@index([status, lastCheckedAt])
   @@index([providerTransactionId])
 }

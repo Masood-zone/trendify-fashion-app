@@ -31,7 +31,7 @@ export async function GET(request: Request) {
       statusGroups,
       recentOrders,
       paidItems,
-    ] = await prisma.$transaction([
+    ] = await Promise.all([
       prisma.payment.aggregate({
         where: { status: "SUCCESS" },
         _sum: { amountPesewas: true },

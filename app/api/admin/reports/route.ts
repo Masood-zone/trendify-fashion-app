@@ -25,7 +25,7 @@ export async function GET(request: Request) {
       inventory,
       promotions,
       statusGroups,
-    ] = await prisma.$transaction([
+    ] = await Promise.all([
       prisma.payment.findMany({
         where: { createdAt: { gte: start, lte: end } },
         include: {

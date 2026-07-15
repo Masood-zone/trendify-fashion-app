@@ -8,7 +8,7 @@ export async function GET(request: Request) {
   try {
     const userId = guard.session.user.id
     const [recentOrders, orderCount, wishlistCount, defaultAddress] =
-      await prisma.$transaction([
+      await Promise.all([
         prisma.order.findMany({
           where: { userId },
           include: {

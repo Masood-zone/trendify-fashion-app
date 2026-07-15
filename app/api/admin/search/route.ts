@@ -9,7 +9,7 @@ export async function GET(request: Request) {
     const q = new URL(request.url).searchParams.get("q")?.trim()
     if (!q || q.length < 2)
       return ok({ products: [], orders: [], customers: [] })
-    const [products, orders, customers] = await prisma.$transaction([
+    const [products, orders, customers] = await Promise.all([
       prisma.product.findMany({
         where: {
           OR: [

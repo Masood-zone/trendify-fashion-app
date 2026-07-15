@@ -10,7 +10,7 @@ import { parseCheckoutConfig } from "@/services/storefront/settings"
 
 export async function GET() {
   try {
-    const [sections, settings] = await prisma.$transaction([
+    const [sections, settings] = await Promise.all([
       prisma.homepageSection.findMany({
         where: { ...publishedContentWhere, enabled: true },
         include: {
