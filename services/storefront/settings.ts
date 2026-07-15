@@ -29,3 +29,19 @@ export function calculateTax(
   const taxablePesewas = Math.max(0, subtotalPesewas - discountPesewas)
   return Math.round((taxablePesewas * taxRateBasisPoints) / 10_000)
 }
+
+export function calculateDeliveryFee(
+  merchandiseAfterDiscountPesewas: number,
+  configuredFeePesewas: number,
+  freeDeliveryThresholdPesewas: number | null,
+  promotionGrantsFreeDelivery = false
+) {
+  if (promotionGrantsFreeDelivery) return 0
+  if (
+    freeDeliveryThresholdPesewas !== null &&
+    merchandiseAfterDiscountPesewas >= freeDeliveryThresholdPesewas
+  ) {
+    return 0
+  }
+  return configuredFeePesewas
+}

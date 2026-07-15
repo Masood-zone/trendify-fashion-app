@@ -13,6 +13,7 @@
     "seed:admin": "tsx prisma/seed.ts",
     "lint": "eslint",
     "format": "prettier --write \"**/*.{ts,tsx}\"",
+    "test:commerce": "tsx --test tests/commerce.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

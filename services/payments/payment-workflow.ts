@@ -65,7 +65,12 @@ export async function reconcilePaystackPayment(reference: string) {
           include: { order: true },
         })
         if (payment.status === PaymentStatus.SUCCESS) {
-          return { payment, order: payment.order, providerStatus, confirmed: true }
+          return {
+            payment,
+            order: payment.order,
+            providerStatus,
+            confirmed: true,
+          }
         }
 
         const paymentData = {
@@ -112,6 +117,12 @@ export async function reconcilePaystackPayment(reference: string) {
           where: { id: payment.orderId },
           data: { status: OrderStatus.CONFIRMED },
         })
+        if (order.cartId) {
+          await tx.cart.updateMany({
+            where: { id: order.cartId, status: "ACTIVE" },
+            data: { status: "CONVERTED" },
+          })
+        }
         await tx.orderEvent.create({
           data: {
             orderId: order.id,
@@ -141,7 +152,8 @@ export async function reconcilePaystackPayment(reference: string) {
             gatewayResponse: provider.gateway_response,
             failureCode: providerStatus.toUpperCase(),
             failureMessage:
-              provider.gateway_response || `Paystack reported ${providerStatus}`,
+              provider.gateway_response ||
+              `Paystack reported ${providerStatus}`,
             lastCheckedAt: checkedAt,
             verificationAttempts: { increment: 1 },
           },
@@ -152,7 +164,9 @@ export async function reconcilePaystackPayment(reference: string) {
             where: {
               orderId: local.orderId,
               id: { not: local.id },
-              status: { in: [PaymentStatus.INITIALIZED, PaymentStatus.PENDING] },
+              status: {
+                in: [PaymentStatus.INITIALIZED, PaymentStatus.PENDING],
+              },
             },
           })
           if (viableAttempts === 0) {
@@ -209,15 +223,24 @@ export async function reconcilePendingPaystackPayments(limit = 100) {
     take: limit,
     select: { reference: true },
   })
-  const results = { examined: pending.length, confirmed: 0, pending: 0, failed: 0 }
+  const results = {
+    examined: pending.length,
+    confirmed: 0,
+    pending: 0,
+    failed: 0,
+  }
   for (const item of pending) {
     try {
       const result = await reconcilePaystackPayment(item.reference)
       if (result.confirmed) results.confirmed += 1
-      else if (result.payment.status === PaymentStatus.FAILED) results.failed += 1
+      else if (result.payment.status === PaymentStatus.FAILED)
+        results.failed += 1
       else results.pending += 1
     } catch (error) {
-      console.error(`Paystack reconciliation failed for ${item.reference}`, error)
+      console.error(
+        `Paystack reconciliation failed for ${item.reference}`,
+        error
+      )
       results.pending += 1
     }
   }

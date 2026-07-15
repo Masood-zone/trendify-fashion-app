@@ -8,6 +8,7 @@ import { reserveInventory } from "@/services/inventory/inventory"
 import { getOrCreateCart } from "@/services/storefront/cart"
 import { evaluatePromotion } from "@/services/storefront/promotions"
 import {
+  calculateDeliveryFee,
   calculateTax,
   parseCheckoutConfig,
 } from "@/services/storefront/settings"
@@ -75,15 +76,12 @@ export async function calculateCheckout(
       )
     : undefined
   const discountPesewas = promo?.discountPesewas ?? 0
-  const qualifiesForFreeDelivery = Boolean(
-    checkoutConfig.freeDeliveryThresholdPesewas !== null &&
-      subtotalPesewas - discountPesewas >=
-        checkoutConfig.freeDeliveryThresholdPesewas
+  const deliveryFeePesewas = calculateDeliveryFee(
+    subtotalPesewas - discountPesewas,
+    delivery.feePesewas,
+    checkoutConfig.freeDeliveryThresholdPesewas,
+    promo?.promotion.type === "FREE_DELIVERY"
   )
-  const deliveryFeePesewas =
-    promo?.promotion.type === "FREE_DELIVERY" || qualifiesForFreeDelivery
-      ? 0
-      : delivery.feePesewas
   const taxPesewas = calculateTax(
     subtotalPesewas,
     discountPesewas,
@@ -195,10 +193,6 @@ export async function createOrder(request: Request, input: CheckoutInput) {
           data: { usedCount: { increment: 1 } },
         })
       }
-      await tx.cart.update({
-        where: { id: calculation.cart.id },
-        data: { status: "CONVERTED" },
-      })
       return created
     },
     { isolationLevel: "Serializable" }
