@@ -1,7 +1,10 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
-import { productConflictResponse } from "../services/admin/product-errors"
+import {
+  ProductValidationError,
+  productConflictResponse,
+} from "../services/admin/product-errors"
 import { appendProductMedia, removeProductMedia } from "../services/admin/product-media"
 import { productPatchPayloadSchema } from "../services/admin/schemas"
 
@@ -72,4 +75,17 @@ test("P2002 maps to an actionable product conflict response", async () => {
     code: "PRODUCT_CONFLICT",
   })
   assert.equal(productConflictResponse(new Error("other")), null)
+})
+
+test("product publishing validation maps to 422", async () => {
+  const response = productConflictResponse(
+    new ProductValidationError("Publishing requires: primary image")
+  )
+  assert.ok(response)
+  assert.equal(response.status, 422)
+  assert.deepEqual(await response.json(), {
+    success: false,
+    message: "Publishing requires: primary image",
+    code: "PRODUCT_VALIDATION",
+  })
 })

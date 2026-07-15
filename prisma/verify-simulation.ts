@@ -134,17 +134,22 @@ async function main() {
   assert(orderItems === 0 && reviews === 0 && movements === 0, "simulation unexpectedly created order, review, or inventory history")
 
   const stableIds = [
-    ...brandRows, ...artisanRows, ...categoryRows, ...collectionRows, ...tagRows, ...guideRows,
-    ...catalogue.map(({ id, slug }) => ({ id, slug })),
-    ...variants.map(({ id, sku }) => ({ id, sku })),
-    ...media.map(({ id, mediaAssetId }) => ({ id, mediaAssetId })),
-    ...imageAssets.map(({ id, publicId }) => ({ id, publicId })),
-    ...promotions.map(({ id, code }) => ({ id, code })),
-    ...deliveries.map(({ id, code }) => ({ id, code })),
-    ...pages,
-    ...homepage.map(({ id, key }) => ({ id, key })),
-  ]
-  const stableIdHash = createHash("sha256").update(JSON.stringify(stableIds)).digest("hex")
+    ...brandRows.map(({ id, slug }) => `brand:${slug}:${id}`),
+    ...artisanRows.map(({ id, slug }) => `artisan:${slug}:${id}`),
+    ...categoryRows.map(({ id, slug }) => `category:${slug}:${id}`),
+    ...collectionRows.map(({ id, slug }) => `collection:${slug}:${id}`),
+    ...tagRows.map(({ id, slug }) => `tag:${slug}:${id}`),
+    ...guideRows.map(({ id, name }) => `guide:${name}:${id}`),
+    ...catalogue.map(({ id, slug }) => `product:${slug}:${id}`),
+    ...variants.map(({ id, sku }) => `variant:${sku}:${id}`),
+    ...media.map(({ id, productId, mediaAssetId }) => `product-media:${productId}:${mediaAssetId}:${id}`),
+    ...imageAssets.map(({ id, publicId }) => `media:${publicId}:${id}`),
+    ...promotions.map(({ id, code }) => `promotion:${code}:${id}`),
+    ...deliveries.map(({ id, code }) => `delivery:${code}:${id}`),
+    ...pages.map(({ id, slug }) => `page:${slug}:${id}`),
+    ...homepage.map(({ id, key }) => `homepage:${key}:${id}`),
+  ].sort()
+  const stableIdHash = createHash("sha256").update(stableIds.join("\n")).digest("hex")
   console.log("Simulation verification passed: 24 products, 75 variants, 48 product images, 72 recommendations, and 8 canonical homepage slots.")
   console.log(`Stable ID fingerprint: ${stableIdHash}`)
 }

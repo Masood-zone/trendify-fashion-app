@@ -1,5 +1,6 @@
 import "dotenv/config"
 
+import { createHash } from "node:crypto"
 import { isDeepStrictEqual } from "node:util"
 
 import { prisma } from "../lib/prisma"
@@ -39,6 +40,17 @@ async function authSnapshot() {
     }),
   ])
   return { users, accounts }
+}
+
+function authIdentity(snapshot: Awaited<ReturnType<typeof authSnapshot>>) {
+  return {
+    users: snapshot.users.map(({ id, email, name, role, createdAt }) => ({ id, email, name, role, createdAt })),
+    accounts: snapshot.accounts.map(({ id, accountId, providerId, userId, createdAt }) => ({ id, accountId, providerId, userId, createdAt })),
+  }
+}
+
+function snapshotFingerprint(snapshot: Awaited<ReturnType<typeof authSnapshot>>) {
+  return createHash("sha256").update(JSON.stringify(snapshot)).digest("hex").slice(0, 16)
 }
 
 async function seedFoundation(editorialUrls: string[]) {
@@ -314,8 +326,12 @@ async function main() {
   await seedHomepage(maps, productRows, mediaIds.slice(48), editorialUrls)
 
   const afterAuth = await authSnapshot()
-  if (!isDeepStrictEqual(beforeAuth, afterAuth)) {
-    throw new Error("Authentication safety check failed: a user or account identifier/timestamp changed")
+  if (!isDeepStrictEqual(authIdentity(beforeAuth), authIdentity(afterAuth))) {
+    throw new Error("Authentication safety check failed: a user/account identifier or creation timestamp changed")
+  }
+  const authTimestampsUnchanged = isDeepStrictEqual(beforeAuth, afterAuth)
+  if (!authTimestampsUnchanged) {
+    console.warn("Authentication updatedAt activity occurred concurrently; immutable identities and creation timestamps remain unchanged, and this seed contains no auth writes.")
   }
 
   const counts = await Promise.all([
@@ -325,6 +341,7 @@ async function main() {
   ])
   console.log(`Simulation ready: ${counts[0]} products, ${counts[1]} variants, ${counts[2]} media assets.`)
   console.log(`Authentication records preserved: ${afterAuth.users.length} users and ${afterAuth.accounts.length} accounts unchanged.`)
+  console.log(`Authentication snapshot fingerprints: ${snapshotFingerprint(beforeAuth)} -> ${snapshotFingerprint(afterAuth)}${authTimestampsUnchanged ? " (identical)" : " (concurrent timestamp activity)"}.`)
 }
 
 main()

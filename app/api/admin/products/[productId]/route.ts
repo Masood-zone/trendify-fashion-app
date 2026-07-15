@@ -2,7 +2,10 @@ import { requireAdmin } from "@/lib/admin-api"
 import { fail, invalid, ok, serverError } from "@/lib/api-response"
 import { prisma } from "@/lib/prisma"
 import { auditAdmin } from "@/services/admin/audit"
-import { productConflictResponse } from "@/services/admin/product-errors"
+import {
+  ProductValidationError,
+  productConflictResponse,
+} from "@/services/admin/product-errors"
 import { productPatchPayloadSchema } from "@/services/admin/schemas"
 import sanitizeHtml from "sanitize-html"
 export async function GET(
@@ -163,7 +166,9 @@ export async function PATCH(
           ) && "active variant",
         ].filter(Boolean)
         if (missing.length)
-          throw new Error(`Publishing requires: ${missing.join(", ")}`)
+          throw new ProductValidationError(
+            `Publishing requires: ${missing.join(", ")}`
+          )
       }
       return tx.product.update({
         where: { id },

@@ -5,7 +5,17 @@ type PrismaLikeError = {
   meta?: { target?: unknown }
 }
 
+export class ProductValidationError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = "ProductValidationError"
+  }
+}
+
 export function productConflictResponse(error: unknown) {
+  if (error instanceof ProductValidationError) {
+    return fail(error.message, 422, "PRODUCT_VALIDATION")
+  }
   const prismaError = error as PrismaLikeError
   if (prismaError?.code !== "P2002") return null
 
