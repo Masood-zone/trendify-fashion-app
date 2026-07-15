@@ -11,9 +11,11 @@ export interface AdminProductSummary {
 }
 
 export interface AdminDashboardData {
-  productCount: number
-  customerCount: number
-  pendingOrders: number
-  lowStock: number
-  revenuePesewas: MoneyPesewas
+  summary: { revenuePesewas: MoneyPesewas; totalOrders: number; totalCustomers: number; productsInStock: number; pendingOrders: number; lowStockProducts: number }
+  changes: { revenue: number; orders: number; customers: number }
+  monthlyRevenue: Array<{ label: string; valuePesewas: MoneyPesewas }>
+  orderStatus: { delivered: number; processing: number; refunded: number; pending: number; cancelled: number }
+  salesByCategory: Array<{ name: string; valuePesewas: MoneyPesewas }>
+  recentOrders: Array<{ id: string; orderNumber: string; customerName: string; createdAt: string; totalPesewas: MoneyPesewas; status: string; paid: boolean }>
+  lowStock: Array<{ id: string; name: string; available: number; threshold: number; imageUrl: string | null }>
 }

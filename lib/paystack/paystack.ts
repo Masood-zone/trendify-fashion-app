@@ -21,8 +21,10 @@ export type PaystackInitializeData = {
 }
 
 export type PaystackVerifyData = {
+  id?: number
   amount: number
   currency: string
+  gateway_response?: string
   paid_at: string | null
   reference: string
   status: string

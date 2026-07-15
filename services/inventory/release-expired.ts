@@ -1,6 +1,7 @@
 import { OrderEventType, OrderStatus } from "@/app/generated/prisma/enums"
 import { prisma } from "@/lib/prisma"
 import { releaseInventory } from "@/services/inventory/inventory"
+import { reconcilePaystackPayment } from "@/services/payments/payment-workflow"
 
 export async function releaseExpiredReservations(now = new Date()) {
   const orders = await prisma.order.findMany({
@@ -13,6 +14,29 @@ export async function releaseExpiredReservations(now = new Date()) {
   })
   let released = 0
   for (const order of orders) {
+    const payments = await prisma.payment.findMany({
+      where: {
+        orderId: order.id,
+        status: { in: ["INITIALIZED", "PENDING"] },
+      },
+      select: { reference: true },
+    })
+    let confirmed = false
+    for (const payment of payments) {
+      try {
+        const result = await reconcilePaystackPayment(payment.reference)
+        if (result.confirmed) {
+          confirmed = true
+          break
+        }
+      } catch (error) {
+        console.error(
+          `Final Paystack verification failed for ${payment.reference}`,
+          error
+        )
+      }
+    }
+    if (confirmed) continue
     const changed = await prisma.$transaction(async (tx) => {
       const claim = await tx.order.updateMany({
         where: {

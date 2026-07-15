@@ -24,6 +24,12 @@ enum ProductStatus {
   ARCHIVED
 }
 
+enum ProductAudience {
+  MEN
+  WOMEN
+  UNISEX
+}
+
 enum MediaType {
   IMAGE
   VIDEO
@@ -95,13 +101,6 @@ enum MobileMoneyNetwork {
   TELECEL
   AIRTELTIGO
   OTHER
-}
-
-enum WebhookStatus {
-  PENDING
-  PROCESSED
-  FAILED
-  IGNORED
 }
 
 enum ReviewStatus {
@@ -360,27 +359,29 @@ model SizeGuide {
 }
 
 model Product {
-  id                    String        @id @default(cuid())
+  id                    String           @id @default(cuid())
   brandId               String?
   artisanId             String?
   sizeGuideId           String?
   name                  String
-  slug                  String        @unique
+  slug                  String           @unique
   shortDescription      String?
   description           String
   materialSummary       String?
   careInstructions      String?
   basePricePesewas      Int
   compareAtPricePesewas Int?
-  status                ProductStatus @default(DRAFT)
-  madeInGhana           Boolean       @default(false)
-  featured              Boolean       @default(false)
-  newArrival            Boolean       @default(false)
+  costPricePesewas      Int?
+  audience              ProductAudience?
+  status                ProductStatus    @default(DRAFT)
+  madeInGhana           Boolean          @default(false)
+  featured              Boolean          @default(false)
+  newArrival            Boolean          @default(false)
   seoTitle              String?
   seoDescription        String?
   publishedAt           DateTime?
-  createdAt             DateTime      @default(now())
-  updatedAt             DateTime      @updatedAt
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
   deletedAt             DateTime?
 
   brand            Brand?                   @relation(fields: [brandId], references: [id], onDelete: SetNull)
@@ -404,6 +405,7 @@ model Product {
   @@index([status, publishedAt])
   @@index([featured, newArrival])
   @@index([basePricePesewas])
+  @@index([audience])
   @@index([deletedAt])
 }
 
@@ -814,34 +816,19 @@ model Payment {
   expiresAt             DateTime?
   paidAt                DateTime?
   verifiedAt            DateTime?
+  providerStatus        String?
+  gatewayResponse       String?
+  lastCheckedAt         DateTime?
+  verificationAttempts  Int                 @default(0)
   createdAt             DateTime            @default(now())
   updatedAt             DateTime            @updatedAt
 
-  order         Order                 @relation(fields: [orderId], references: [id], onDelete: Restrict)
-  webhookEvents PaymentWebhookEvent[]
+  order Order @relation(fields: [orderId], references: [id], onDelete: Restrict)
 
   @@index([orderId, createdAt])
   @@index([status, createdAt])
+  @@index([status, lastCheckedAt])
   @@index([providerTransactionId])
-}
-
-model PaymentWebhookEvent {
-  id              String        @id @default(cuid())
-  paymentId       String?
-  providerEventId String        @unique
-  eventType       String
-  reference       String?
-  payload         Json
-  status          WebhookStatus @default(PENDING)
-  processedAt     DateTime?
-  errorMessage    String?
-  createdAt       DateTime      @default(now())
-
-  payment Payment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
-
-  @@index([reference])
-  @@index([status, createdAt])
-  @@index([paymentId])
 }
 
 model Review {
