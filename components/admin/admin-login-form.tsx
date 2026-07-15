@@ -5,11 +5,13 @@ import { useRouter } from "next/navigation"
 import { useState } from "react"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
+import { toast } from "sonner"
 import { z } from "zod"
 
 import { MaterialSymbol } from "@/components/common/MaterialSymbol"
 import { Button } from "@/components/ui/button"
 import { authClient } from "@/lib/auth-client"
+import { toastFormErrors } from "@/lib/form-toast"
 
 const adminLoginSchema = z.object({
   email: z.string().trim().email("Enter a valid email address"),
@@ -51,17 +53,24 @@ export function AdminLoginForm({
         await authClient.signOut()
         throw new Error("This account does not have administrator access")
       }
+      toast.success("Administrator login successful")
       router.replace(callbackURL.startsWith("/admin") ? callbackURL : "/admin")
       router.refresh()
     } catch (caught) {
+      const message = caught instanceof Error ? caught.message : "Login failed"
       setError("root", {
-        message: caught instanceof Error ? caught.message : "Login failed",
+        message,
       })
+      toast.error(message)
     }
   }
 
   return (
-    <form onSubmit={handleSubmit(submit)} className="space-y-7" noValidate>
+    <form
+      onSubmit={handleSubmit(submit, toastFormErrors)}
+      className="space-y-7"
+      noValidate
+    >
       <div>
         <label
           htmlFor="admin-email"

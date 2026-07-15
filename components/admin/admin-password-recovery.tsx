@@ -4,11 +4,13 @@ import Link from "next/link"
 import { useState } from "react"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
+import { toast } from "sonner"
 import { z } from "zod"
 
 import { MaterialSymbol } from "@/components/common/MaterialSymbol"
 import { Button } from "@/components/ui/button"
 import { authClient } from "@/lib/auth-client"
+import { toastFormErrors } from "@/lib/form-toast"
 
 type Stage = "request" | "reset" | "done"
 
@@ -53,10 +55,14 @@ export function AdminPasswordRecovery() {
       setMessage(
         "If this administrator account exists, a reset code has been sent."
       )
+      toast.success(
+        "If this administrator account exists, a reset code has been sent."
+      )
     } catch {
-      requestForm.setError("root", {
-        message: "The reset request could not be completed. Please try again.",
-      })
+      const message =
+        "The reset request could not be completed. Please try again."
+      requestForm.setError("root", { message })
+      toast.error(message)
     }
   }
 
@@ -70,16 +76,20 @@ export function AdminPasswordRecovery() {
         password: values.password,
       })
       if (result.error) {
+        const message =
+          result.error.message || "The code is invalid or expired."
         resetForm.setError("root", {
-          message: result.error.message || "The code is invalid or expired.",
+          message,
         })
+        toast.error(message)
         return
       }
+      toast.success("Administrator password reset successfully")
       setStage("done")
     } catch {
-      resetForm.setError("root", {
-        message: "The password could not be updated. Please try again.",
-      })
+      const message = "The password could not be updated. Please try again."
+      resetForm.setError("root", { message })
+      toast.error(message)
     }
   }
 
@@ -106,7 +116,7 @@ export function AdminPasswordRecovery() {
   if (stage === "request") {
     return (
       <form
-        onSubmit={requestForm.handleSubmit(requestCode)}
+        onSubmit={requestForm.handleSubmit(requestCode, toastFormErrors)}
         className="space-y-5"
         noValidate
       >
@@ -152,7 +162,7 @@ export function AdminPasswordRecovery() {
 
   return (
     <form
-      onSubmit={resetForm.handleSubmit(reset)}
+      onSubmit={resetForm.handleSubmit(reset, toastFormErrors)}
       className="space-y-5"
       noValidate
     >
