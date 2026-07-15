@@ -38,10 +38,10 @@ export function useInitializePaystack() {
 }
 export function useVerifyPaystack() {
   return useMutation({
-    mutationFn: (reference: string) =>
+    mutationFn: (input: { reference: string; guestAccessToken?: string }) =>
       post<PaymentVerification>(
         "/payments/paystack/verify",
-        { reference },
+        input,
         "Payment status could not be refreshed"
       ),
   })

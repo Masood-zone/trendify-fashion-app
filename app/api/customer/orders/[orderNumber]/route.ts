@@ -1,6 +1,7 @@
 import { fail, ok, serverError } from "@/lib/api-response"
 import { requireCustomer } from "@/lib/customer-api"
 import { prisma } from "@/lib/prisma"
+import { serializeOrderDetail } from "@/services/orders/serialize-order"
 export async function GET(
   request: Request,
   context: { params: Promise<{ orderNumber: string }> }
@@ -15,11 +16,11 @@ export async function GET(
       },
       include: {
         items: { include: { review: true } },
-        payments: { orderBy: { createdAt: "desc" } },
+        payments: { orderBy: { createdAt: "desc" }, take: 1 },
         events: { orderBy: { occurredAt: "asc" } },
       },
     })
-    return order ? ok(order) : fail("Order not found", 404)
+    return order ? ok(serializeOrderDetail(order)) : fail("Order not found", 404)
   } catch (error) {
     return serverError(error)
   }

@@ -1,6 +1,7 @@
 import { requireCustomer } from "@/lib/customer-api"
 import { ok, serverError } from "@/lib/api-response"
 import { prisma } from "@/lib/prisma"
+import { serializeOrderSummary } from "@/services/orders/serialize-order"
 export async function GET(request: Request) {
   const guard = await requireCustomer(request)
   if ("response" in guard) return guard.response
@@ -26,7 +27,7 @@ export async function GET(request: Request) {
       prisma.order.count({ where }),
     ])
     return ok({
-      items,
+      items: items.map(serializeOrderSummary),
       total,
       page,
       pageSize,

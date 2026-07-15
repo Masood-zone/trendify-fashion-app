@@ -7,6 +7,10 @@ import { hashShopperToken, resolveShopper } from "@/lib/shopper-context"
 import { reserveInventory } from "@/services/inventory/inventory"
 import { getOrCreateCart } from "@/services/storefront/cart"
 import { evaluatePromotion } from "@/services/storefront/promotions"
+import {
+  calculateTax,
+  parseCheckoutConfig,
+} from "@/services/storefront/settings"
 
 export const checkoutSchema = z.object({
   customerName: z.string().trim().min(2).max(120),
@@ -34,6 +38,13 @@ export async function calculateCheckout(
     getOrCreateCart(request),
     resolveShopper(request),
   ])
+  const settings = await prisma.storeSettings.findUnique({
+    where: { key: "default" },
+    select: { checkoutConfig: true },
+  })
+  const checkoutConfig = parseCheckoutConfig(settings?.checkoutConfig)
+  if (!shopper.userId && !checkoutConfig.guestCheckout)
+    throw new Error("Please sign in to continue to checkout")
   if (!cart.items.length) throw new Error("Your cart is empty")
   const delivery = await prisma.deliveryMethod.findFirst({
     where: { code: input.deliveryMethodCode, active: true, deletedAt: null },
@@ -64,8 +75,20 @@ export async function calculateCheckout(
       )
     : undefined
   const discountPesewas = promo?.discountPesewas ?? 0
+  const qualifiesForFreeDelivery = Boolean(
+    checkoutConfig.freeDeliveryThresholdPesewas !== null &&
+      subtotalPesewas - discountPesewas >=
+        checkoutConfig.freeDeliveryThresholdPesewas
+  )
   const deliveryFeePesewas =
-    promo?.promotion.type === "FREE_DELIVERY" ? 0 : delivery.feePesewas
+    promo?.promotion.type === "FREE_DELIVERY" || qualifiesForFreeDelivery
+      ? 0
+      : delivery.feePesewas
+  const taxPesewas = calculateTax(
+    subtotalPesewas,
+    discountPesewas,
+    checkoutConfig.taxRateBasisPoints
+  )
   return {
     cart,
     shopper,
@@ -74,7 +97,10 @@ export async function calculateCheckout(
     subtotalPesewas,
     discountPesewas,
     deliveryFeePesewas,
-    totalPesewas: subtotalPesewas - discountPesewas + deliveryFeePesewas,
+    taxPesewas,
+    checkoutConfig,
+    totalPesewas:
+      subtotalPesewas - discountPesewas + taxPesewas + deliveryFeePesewas,
   }
 }
 
@@ -84,6 +110,9 @@ export async function createOrder(request: Request, input: CheckoutInput) {
     ? undefined
     : randomBytes(32).toString("base64url")
   const orderNumber = `TRD-${Date.now().toString(36).toUpperCase()}-${randomBytes(2).toString("hex").toUpperCase()}`
+  const reservationExpiresAt = new Date(
+    Date.now() + calculation.checkoutConfig.reservationMinutes * 60_000
+  )
   const order = await prisma.$transaction(
     async (tx) => {
       const created = await tx.order.create({
@@ -109,12 +138,13 @@ export async function createOrder(request: Request, input: CheckoutInput) {
           subtotalPesewas: calculation.subtotalPesewas,
           discountPesewas: calculation.discountPesewas,
           deliveryFeePesewas: calculation.deliveryFeePesewas,
+          taxPesewas: calculation.taxPesewas,
           totalPesewas: calculation.totalPesewas,
           promotionCodeSnapshot: calculation.promo?.promotion.code,
           guestAccessTokenHash: guestAccessToken
             ? hashShopperToken(guestAccessToken)
             : undefined,
-          reservationExpiresAt: new Date(Date.now() + 30 * 60 * 1000),
+          reservationExpiresAt,
           items: {
             create: calculation.cart.items.map((item) => ({
               productId: item.variant.product.id,

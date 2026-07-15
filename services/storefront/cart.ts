@@ -15,6 +15,7 @@ export const cartInclude = {
         include: {
           product: {
             include: {
+              brand: { select: { id: true, name: true, slug: true } },
               media: {
                 include: { mediaAsset: true },
                 orderBy: { sortOrder: "asc" as const },
@@ -31,12 +32,36 @@ export const cartInclude = {
 
 export function cartSummary<
   T extends {
+    id: string
     items: Array<{
+      id: string
       quantity: number
       variant: {
+        id: string
+        sku: string
+        sizeLabel: string | null
+        colorName: string | null
+        colorHex: string | null
         pricePesewas: number
+        compareAtPricePesewas: number | null
+        active: boolean
         stockQuantity: number
         reservedQuantity: number
+        product: {
+          id: string
+          name: string
+          slug: string
+          brand: { id: string; name: string; slug: string } | null
+          media: Array<{
+            primary: boolean
+            altText: string | null
+            mediaAsset: {
+              id: string
+              secureUrl: string
+              altText: string | null
+            }
+          }>
+        }
       }
     }>
   },
@@ -46,9 +71,43 @@ export function cartSummary<
     0
   )
   return {
-    ...cart,
+    id: cart.id,
     subtotalPesewas,
     itemCount: cart.items.reduce((sum, item) => sum + item.quantity, 0),
+    items: cart.items.map((item) => ({
+      id: item.id,
+      quantity: item.quantity,
+      lineTotalPesewas: item.quantity * item.variant.pricePesewas,
+      variant: {
+        id: item.variant.id,
+        sku: item.variant.sku,
+        sizeLabel: item.variant.sizeLabel,
+        colorName: item.variant.colorName,
+        colorHex: item.variant.colorHex,
+        pricePesewas: item.variant.pricePesewas,
+        compareAtPricePesewas: item.variant.compareAtPricePesewas,
+        availableQuantity: Math.max(
+          0,
+          item.variant.stockQuantity - item.variant.reservedQuantity
+        ),
+        active: item.variant.active,
+        product: {
+          id: item.variant.product.id,
+          name: item.variant.product.name,
+          slug: item.variant.product.slug,
+          brand: item.variant.product.brand,
+          media: item.variant.product.media.map((entry) => ({
+            id: entry.mediaAsset.id,
+            url: entry.mediaAsset.secureUrl,
+            altText:
+              entry.altText ||
+              entry.mediaAsset.altText ||
+              `${item.variant.product.name} product image`,
+            primary: entry.primary,
+          })),
+        },
+      },
+    })),
   }
 }
 

@@ -1,10 +1,10 @@
 "use client"
 
 import Link from "next/link"
-import { useState } from "react"
-import api from "@/lib/axios"
-import type { ApiResponse } from "@/types"
-import { useAdminResource } from "@/services/admin/resources"
+import { useEffect, useState } from "react"
+import { toast } from "sonner"
+
+import FileUpload from "@/components/common/FileUpload"
 import {
   AdminCard,
   AdminPageHeader,
@@ -12,21 +12,39 @@ import {
   LoadingPanel,
   StatusBadge,
 } from "@/components/admin/admin-ui"
+import { RichTextEditor } from "@/components/admin/rich-text-editor"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { RichTextEditor } from "@/components/admin/rich-text-editor"
+import api from "@/lib/axios"
+import { useAdminResource } from "@/services/admin/resources"
+import { CANONICAL_HOMEPAGE_SLOTS } from "@/services/storefront/homepage"
 
 type Section = {
   id: string
   key: string
   type: string
   status: string
+  mediaAssetId?: string | null
+  mediaAsset?: { secureUrl: string } | null
+  eyebrow?: string | null
   heading?: string | null
   body?: string | null
-  sortOrder: number
+  ctaLabel?: string | null
+  ctaHref?: string | null
   enabled: boolean
+  items: Array<{
+    title: string
+    body?: string | null
+    icon?: string | null
+    imageUrl?: string | null
+    href?: string | null
+    sortOrder: number
+  }>
+  products: Array<{ productId: string }>
+  categories: Array<{ categoryId: string }>
+  collections: Array<{ collectionId: string }>
 }
-type Page = {
+type ContentPage = {
   id: string
   type: string
   slug: string
@@ -34,93 +52,53 @@ type Page = {
   excerpt?: string | null
   body: string
   status: string
-  updatedAt: string
 }
-type Category = {
-  id: string
-  name: string
-  slug: string
-  active: boolean
-  sortOrder: number
-}
+type Named = { id: string; name: string; slug?: string; active?: boolean }
+
 export function ContentAdmin() {
   const [tab, setTab] = useState<"homepage" | "pages" | "navigation">(
     "homepage"
   )
-  const [section, setSection] = useState({
-    key: "",
-    type: "HERO",
-    heading: "",
-    body: "",
-    ctaLabel: "",
-    ctaHref: "",
-    status: "DRAFT",
-    enabled: true,
-  })
-  const [page, setPage] = useState({
-    type: "PAGE",
-    slug: "",
-    title: "",
-    excerpt: "",
-    body: "",
-    status: "DRAFT",
-  })
   const sections = useAdminResource<Section[]>(
     ["homepage-sections"],
     "/admin/homepage/sections"
   )
-  const pages = useAdminResource<Page[]>(["content-pages"], "/admin/content")
-  const categories = useAdminResource<Category[]>(
+  const pages = useAdminResource<ContentPage[]>(
+    ["content-pages"],
+    "/admin/content"
+  )
+  const categories = useAdminResource<Named[]>(
     ["categories"],
     "/admin/categories"
   )
-  const saveSection = async (event: React.FormEvent) => {
-    event.preventDefault()
-    const response = await api.post<ApiResponse<unknown>>(
-      "/admin/homepage/sections",
-      { ...section, sortOrder: sections.data?.length ?? 0 }
+  const products = useAdminResource<Named[]>(
+    ["products", "content-links"],
+    "/admin/products"
+  )
+  const collections = useAdminResource<Named[]>(
+    ["collections", "content-links"],
+    "/admin/collections"
+  )
+  const initialize = async () => {
+    const existing = new Set(sections.data?.map((item) => item.key))
+    await Promise.all(
+      CANONICAL_HOMEPAGE_SLOTS.filter((slot) => !existing.has(slot.key)).map(
+        (slot) =>
+          api.post("/admin/homepage/sections", {
+            ...slot,
+            status: "DRAFT",
+            enabled: true,
+          })
+      )
     )
-    if (response.data.success) {
-      setSection({
-        key: "",
-        type: "HERO",
-        heading: "",
-        body: "",
-        ctaLabel: "",
-        ctaHref: "",
-        status: "DRAFT",
-        enabled: true,
-      })
-      await sections.refetch()
-    }
-  }
-  const savePage = async (event: React.FormEvent) => {
-    event.preventDefault()
-    const response = await api.post<ApiResponse<unknown>>(
-      "/admin/content",
-      page
-    )
-    if (response.data.success) {
-      setPage({
-        type: "PAGE",
-        slug: "",
-        title: "",
-        excerpt: "",
-        body: "",
-        status: "DRAFT",
-      })
-      await pages.refetch()
-    }
-  }
-  const patchSection = async (item: Section, data: Partial<Section>) => {
-    await api.patch(`/admin/homepage/sections/${item.id}`, data)
     await sections.refetch()
+    toast.success("Canonical homepage slots are ready")
   }
   return (
     <>
       <AdminPageHeader
         title="Content and homepage"
-        description="Publish the storefront experience from persisted sections, editorial pages and catalogue navigation order."
+        description="Edit the fixed Heritage Refined homepage slots and publish storefront pages."
         actions={
           <Button
             variant="outline"
@@ -135,264 +113,35 @@ export function ContentAdmin() {
           <button
             key={value}
             onClick={() => setTab(value)}
-            className={`px-5 py-3 text-sm font-semibold capitalize ${tab === value ? "border-b-2 border-primary text-primary" : "text-muted-foreground"}`}
+            className={`px-5 py-3 text-sm font-semibold capitalize ${tab === value ? "border-b-2 border-primary" : "text-muted-foreground"}`}
           >
             {value === "pages" ? "Content pages" : value}
           </button>
         ))}
       </div>
-      {tab === "homepage" && (
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
-          <div className="space-y-3">
-            {sections.isLoading ? (
-              <LoadingPanel />
-            ) : sections.isError ? (
-              <ErrorPanel message={sections.error.message} />
-            ) : sections.data?.length ? (
-              sections.data.map((item) => (
-                <AdminCard
-                  key={item.id}
-                  className="flex items-center justify-between gap-4 p-5"
-                >
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <p className="font-semibold">
-                        {item.heading || item.key}
-                      </p>
-                      <StatusBadge
-                        tone={
-                          item.status === "PUBLISHED" ? "success" : "warning"
-                        }
-                      >
-                        {item.status}
-                      </StatusBadge>
-                    </div>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {item.type.replaceAll("_", " ")} · position{" "}
-                      {item.sortOrder + 1} ·{" "}
-                      {item.enabled ? "enabled" : "disabled"}
-                    </p>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button
-                      size="xs"
-                      variant="outline"
-                      onClick={() =>
-                        patchSection(item, { enabled: !item.enabled })
-                      }
-                    >
-                      {item.enabled ? "Disable" : "Enable"}
-                    </Button>
-                    <Button
-                      size="xs"
-                      onClick={() =>
-                        patchSection(item, {
-                          status:
-                            item.status === "PUBLISHED" ? "DRAFT" : "PUBLISHED",
-                          publishedAt: new Date().toISOString(),
-                        } as Partial<Section>)
-                      }
-                    >
-                      {item.status === "PUBLISHED" ? "Unpublish" : "Publish"}
-                    </Button>
-                  </div>
-                </AdminCard>
-              ))
-            ) : (
-              <AdminCard className="p-8 text-center text-sm text-muted-foreground">
-                No homepage sections have been configured.
-              </AdminCard>
-            )}
-          </div>
-          <AdminCard className="h-fit p-5">
-            <h2 className="font-heading text-xl font-semibold">
-              Add homepage section
-            </h2>
-            <form className="mt-5 space-y-3" onSubmit={saveSection}>
-              <Input
-                required
-                placeholder="Unique key"
-                value={section.key}
-                onChange={(e) =>
-                  setSection((current) => ({
-                    ...current,
-                    key: e.target.value
-                      .toLowerCase()
-                      .replace(/[^a-z0-9]+/g, "-"),
-                  }))
-                }
-              />
-              <select
-                className="h-11 w-full border border-outline-variant bg-white px-3"
-                value={section.type}
-                onChange={(e) =>
-                  setSection((current) => ({
-                    ...current,
-                    type: e.target.value,
-                  }))
-                }
-              >
-                {[
-                  "HERO",
-                  "BENEFITS",
-                  "CATEGORY_GRID",
-                  "COLLECTION_SPOTLIGHT",
-                  "PRODUCT_CAROUSEL",
-                  "HERITAGE_STORY",
-                  "REGIONAL_TRENDS",
-                  "NEWSLETTER",
-                ].map((value) => (
-                  <option key={value}>{value}</option>
-                ))}
-              </select>
-              <Input
-                placeholder="Heading"
-                value={section.heading}
-                onChange={(e) =>
-                  setSection((current) => ({
-                    ...current,
-                    heading: e.target.value,
-                  }))
-                }
-              />
-              <textarea
-                className="min-h-24 w-full border border-outline-variant p-3"
-                placeholder="Body copy"
-                value={section.body}
-                onChange={(e) =>
-                  setSection((current) => ({
-                    ...current,
-                    body: e.target.value,
-                  }))
-                }
-              />
-              <Input
-                placeholder="Call-to-action label"
-                value={section.ctaLabel}
-                onChange={(e) =>
-                  setSection((current) => ({
-                    ...current,
-                    ctaLabel: e.target.value,
-                  }))
-                }
-              />
-              <Input
-                placeholder="Call-to-action link"
-                value={section.ctaHref}
-                onChange={(e) =>
-                  setSection((current) => ({
-                    ...current,
-                    ctaHref: e.target.value,
-                  }))
-                }
-              />
-              <Button type="submit" className="w-full">
-                Add as draft
-              </Button>
-            </form>
-          </AdminCard>
-        </div>
-      )}
+      {tab === "homepage" &&
+        (sections.isLoading ? (
+          <LoadingPanel />
+        ) : sections.isError ? (
+          <ErrorPanel message={sections.error.message} />
+        ) : (
+          <HomepageEditor
+            sections={sections.data ?? []}
+            products={products.data ?? []}
+            categories={categories.data ?? []}
+            collections={collections.data ?? []}
+            initialize={initialize}
+            refresh={() => sections.refetch()}
+          />
+        ))}
       {tab === "pages" && (
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
-          <div className="space-y-3">
-            {pages.isLoading ? (
-              <LoadingPanel />
-            ) : pages.data?.length ? (
-              pages.data.map((item) => (
-                <AdminCard
-                  key={item.id}
-                  className="flex justify-between gap-4 p-5"
-                >
-                  <div>
-                    <p className="font-semibold">{item.title}</p>
-                    <p className="text-xs text-muted-foreground">
-                      /{item.slug} · {item.type}
-                    </p>
-                  </div>
-                  <StatusBadge
-                    tone={item.status === "PUBLISHED" ? "success" : "warning"}
-                  >
-                    {item.status}
-                  </StatusBadge>
-                </AdminCard>
-              ))
-            ) : (
-              <AdminCard className="p-8 text-center text-sm text-muted-foreground">
-                No content pages yet.
-              </AdminCard>
-            )}
-          </div>
-          <AdminCard className="h-fit p-5">
-            <h2 className="font-heading text-xl font-semibold">
-              Create content page
-            </h2>
-            <form className="mt-5 space-y-3" onSubmit={savePage}>
-              <select
-                className="h-11 w-full border border-outline-variant bg-white px-3"
-                value={page.type}
-                onChange={(e) =>
-                  setPage((current) => ({ ...current, type: e.target.value }))
-                }
-              >
-                <option>PAGE</option>
-                <option>POLICY</option>
-                <option>FAQ</option>
-              </select>
-              <Input
-                required
-                placeholder="Title"
-                value={page.title}
-                onChange={(e) =>
-                  setPage((current) => ({
-                    ...current,
-                    title: e.target.value,
-                    slug: e.target.value
-                      .toLowerCase()
-                      .replace(/[^a-z0-9]+/g, "-")
-                      .replace(/^-|-$/g, ""),
-                  }))
-                }
-              />
-              <Input
-                required
-                placeholder="Slug"
-                value={page.slug}
-                onChange={(e) =>
-                  setPage((current) => ({ ...current, slug: e.target.value }))
-                }
-              />
-              <Input
-                placeholder="Excerpt"
-                value={page.excerpt}
-                onChange={(e) =>
-                  setPage((current) => ({
-                    ...current,
-                    excerpt: e.target.value,
-                  }))
-                }
-              />
-              <RichTextEditor
-                value={page.body}
-                onChange={(value) =>
-                  setPage((current) => ({ ...current, body: value }))
-                }
-              />
-              <Button type="submit" className="w-full">
-                Save draft page
-              </Button>
-            </form>
-          </AdminCard>
-        </div>
-      )}
+        <PagesEditor pages={pages.data ?? []} refresh={() => pages.refetch()} />
+      )}{" "}
       {tab === "navigation" && (
         <AdminCard className="p-6">
-          <h2 className="font-heading text-xl font-semibold">
-            Storefront navigation
-          </h2>
+          <h2 className="type-headline-md">Storefront navigation</h2>
           <p className="mt-2 text-sm text-muted-foreground">
-            Navigation uses the active category ordering below, keeping one
-            source of truth for catalogue and menus.
+            The public menu follows active category ordering.
           </p>
           <div className="mt-5 divide-y divide-outline-variant">
             {categories.data?.map((item, index) => (
@@ -401,7 +150,7 @@ export function ContentAdmin() {
                   {index + 1}. {item.name}
                 </span>
                 <span className="text-sm text-muted-foreground">
-                  /{item.slug} · {item.active ? "Visible" : "Hidden"}
+                  /{item.slug} · {item.active === false ? "Hidden" : "Visible"}
                 </span>
               </div>
             ))}
@@ -409,5 +158,429 @@ export function ContentAdmin() {
         </AdminCard>
       )}
     </>
+  )
+}
+
+function HomepageEditor({
+  sections,
+  products,
+  categories,
+  collections,
+  initialize,
+  refresh,
+}: {
+  sections: Section[]
+  products: Named[]
+  categories: Named[]
+  collections: Named[]
+  initialize: () => void
+  refresh: () => unknown
+}) {
+  const [selectedId, setSelectedId] = useState(sections[0]?.id || "")
+  const selected =
+    sections.find((item) => item.id === selectedId) || sections[0]
+  return (
+    <div className="grid gap-6 xl:grid-cols-[300px_minmax(0,1fr)]">
+      <div className="space-y-3">
+        <Button className="w-full" variant="outline" onClick={initialize}>
+          Initialize missing slots
+        </Button>
+        {CANONICAL_HOMEPAGE_SLOTS.map((slot) => {
+          const section = sections.find((item) => item.key === slot.key)
+          return (
+            <button
+              key={slot.key}
+              disabled={!section}
+              onClick={() => section && setSelectedId(section.id)}
+              className={`w-full border p-4 text-left ${selected?.id === section?.id ? "border-primary bg-surface-container" : "border-outline-variant bg-white"} disabled:opacity-50`}
+            >
+              <span className="font-semibold capitalize">
+                {slot.key.replaceAll("-", " ")}
+              </span>
+              <span className="mt-1 block text-xs text-muted-foreground">
+                {section
+                  ? `${section.status} · ${section.enabled ? "visible" : "hidden"}`
+                  : "Not initialized"}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+      {selected ? (
+        <SectionForm
+          key={selected.id}
+          section={selected}
+          products={products}
+          categories={categories}
+          collections={collections}
+          refresh={refresh}
+        />
+      ) : (
+        <AdminCard className="p-10 text-center">
+          Initialize the canonical homepage slots to begin.
+        </AdminCard>
+      )}
+    </div>
+  )
+}
+
+function SectionForm({
+  section,
+  products,
+  categories,
+  collections,
+  refresh,
+}: {
+  section: Section
+  products: Named[]
+  categories: Named[]
+  collections: Named[]
+  refresh: () => unknown
+}) {
+  const [form, setForm] = useState({
+    eyebrow: section.eyebrow || "",
+    heading: section.heading || "",
+    body: section.body || "",
+    ctaLabel: section.ctaLabel || "",
+    ctaHref: section.ctaHref || "",
+    mediaAssetId: section.mediaAssetId || (null as string | null),
+    imageUrl: section.mediaAsset?.secureUrl || "",
+    enabled: section.enabled,
+    status: section.status,
+    productIds: section.products.map((item) => item.productId),
+    categoryIds: section.categories.map((item) => item.categoryId),
+    collectionIds: section.collections.map((item) => item.collectionId),
+    itemsJson: JSON.stringify(section.items, null, 2),
+  })
+  const [saving, setSaving] = useState(false)
+  const set = (
+    key: keyof typeof form,
+    value: string | boolean | string[] | null
+  ) => setForm((current) => ({ ...current, [key]: value }))
+  const save = async () => {
+    setSaving(true)
+    try {
+      const items = form.itemsJson.trim() ? JSON.parse(form.itemsJson) : []
+      await api.patch(`/admin/homepage/sections/${section.id}`, {
+        eyebrow: form.eyebrow || undefined,
+        heading: form.heading || undefined,
+        body: form.body || undefined,
+        ctaLabel: form.ctaLabel || undefined,
+        ctaHref: form.ctaHref || undefined,
+        mediaAssetId: form.mediaAssetId,
+        enabled: form.enabled,
+        status: form.status,
+        publishedAt:
+          form.status === "PUBLISHED" ? new Date().toISOString() : null,
+        productIds: form.productIds,
+        categoryIds: form.categoryIds,
+        collectionIds: form.collectionIds,
+        items,
+      })
+      await refresh()
+      toast.success("Homepage content saved")
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Homepage content could not be saved"
+      )
+    } finally {
+      setSaving(false)
+    }
+  }
+  return (
+    <AdminCard className="p-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="type-label">
+            Fixed slot · {section.type.replaceAll("_", " ")}
+          </p>
+          <h2 className="type-headline-md mt-2 capitalize">
+            {section.key.replaceAll("-", " ")}
+          </h2>
+        </div>
+        <StatusBadge tone={form.status === "PUBLISHED" ? "success" : "warning"}>
+          {form.status}
+        </StatusBadge>
+      </div>
+      <div className="mt-6 grid gap-5 sm:grid-cols-2">
+        <Field label="Eyebrow">
+          <Input
+            value={form.eyebrow}
+            onChange={(event) => set("eyebrow", event.target.value)}
+          />
+        </Field>
+        <Field label="Heading">
+          <Input
+            value={form.heading}
+            onChange={(event) => set("heading", event.target.value)}
+          />
+        </Field>
+        <div className="sm:col-span-2">
+          <Field label="Body">
+            <textarea
+              className="min-h-28 w-full border border-outline-variant p-3"
+              value={form.body}
+              onChange={(event) => set("body", event.target.value)}
+            />
+          </Field>
+        </div>
+        <Field label="CTA label">
+          <Input
+            value={form.ctaLabel}
+            onChange={(event) => set("ctaLabel", event.target.value)}
+          />
+        </Field>
+        <Field label="CTA path">
+          <Input
+            value={form.ctaHref}
+            onChange={(event) => set("ctaHref", event.target.value)}
+          />
+        </Field>
+        <div className="sm:col-span-2">
+          <Field label="Section image">
+            <FileUpload
+              uploadMode="single"
+              uploadToCloudinary
+                cloudinaryPurpose="homepageMedia"
+              acceptedFileTypes={{
+                "image/*": [".png", ".jpg", ".jpeg", ".webp"],
+              }}
+              onFilesUploaded={(files) => {
+                const file = Array.isArray(files) ? files[0] : files
+                if (file?.upload) {
+                  set("mediaAssetId", file.upload.id)
+                  set("imageUrl", file.upload.url)
+                }
+              }}
+            />
+            {form.imageUrl && (
+              <p className="mt-2 truncate text-xs text-muted-foreground">
+                {form.imageUrl}
+              </p>
+            )}
+          </Field>
+        </div>
+        <Multi
+          label="Linked products"
+          value={form.productIds}
+          items={products}
+          onChange={(value) => set("productIds", value)}
+        />
+        <Multi
+          label="Linked categories"
+          value={form.categoryIds}
+          items={categories}
+          onChange={(value) => set("categoryIds", value)}
+        />
+        <Multi
+          label="Linked collections"
+          value={form.collectionIds}
+          items={collections}
+          onChange={(value) => set("collectionIds", value)}
+        />
+        <div className="sm:col-span-2">
+          <Field label="Repeating items (JSON array)">
+            <textarea
+              className="min-h-48 w-full border border-outline-variant p-3 font-mono text-xs"
+              value={form.itemsJson}
+              onChange={(event) => set("itemsJson", event.target.value)}
+            />
+          </Field>
+        </div>
+        <label className="flex items-center gap-3 text-sm">
+          <input
+            type="checkbox"
+            checked={form.enabled}
+            onChange={(event) => set("enabled", event.target.checked)}
+          />{" "}
+          Visible when published
+        </label>
+        <Field label="Publication">
+          <select
+            className="h-11 w-full border border-outline-variant bg-white px-3"
+            value={form.status}
+            onChange={(event) => set("status", event.target.value)}
+          >
+            <option value="DRAFT">Draft</option>
+            <option value="PUBLISHED">Published</option>
+            <option value="ARCHIVED">Archived</option>
+          </select>
+        </Field>
+        <Button
+          className="sm:col-span-2 sm:w-fit"
+          onClick={save}
+          disabled={saving}
+        >
+          {saving ? "Saving…" : "Save slot content"}
+        </Button>
+      </div>
+    </AdminCard>
+  )
+}
+
+function PagesEditor({
+  pages,
+  refresh,
+}: {
+  pages: ContentPage[]
+  refresh: () => unknown
+}) {
+  const [page, setPage] = useState({
+    type: "PAGE",
+    slug: "",
+    title: "",
+    excerpt: "",
+    body: "",
+    status: "DRAFT",
+  })
+  useEffect(() => {
+    if (!page.slug && page.title)
+      setPage((current) => ({
+        ...current,
+        slug: current.title
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-|-$/g, ""),
+      }))
+  }, [page.slug, page.title])
+  return (
+    <div className="grid gap-6 xl:grid-cols-[1fr_420px]">
+      <div className="space-y-3">
+        {pages.map((item) => (
+          <AdminCard key={item.id} className="flex justify-between p-5">
+            <div>
+              <p className="font-semibold">{item.title}</p>
+              <p className="text-xs text-muted-foreground">
+                /{item.slug} · {item.type}
+              </p>
+            </div>
+            <StatusBadge
+              tone={item.status === "PUBLISHED" ? "success" : "warning"}
+            >
+              {item.status}
+            </StatusBadge>
+          </AdminCard>
+        ))}
+      </div>
+      <AdminCard className="h-fit p-5">
+        <h2 className="type-headline-md">Create content page</h2>
+        <form
+          className="mt-5 space-y-3"
+          onSubmit={async (event) => {
+            event.preventDefault()
+            await api.post("/admin/content", page)
+            setPage({
+              type: "PAGE",
+              slug: "",
+              title: "",
+              excerpt: "",
+              body: "",
+              status: "DRAFT",
+            })
+            await refresh()
+          }}
+        >
+          <select
+            className="h-11 w-full border border-outline-variant bg-white px-3"
+            value={page.type}
+            onChange={(event) =>
+              setPage((current) => ({ ...current, type: event.target.value }))
+            }
+          >
+            <option>PAGE</option>
+            <option>POLICY</option>
+            <option>FAQ</option>
+          </select>
+          <Input
+            required
+            placeholder="Title"
+            value={page.title}
+            onChange={(event) =>
+              setPage((current) => ({ ...current, title: event.target.value }))
+            }
+          />
+          <Input
+            required
+            placeholder="Slug"
+            value={page.slug}
+            onChange={(event) =>
+              setPage((current) => ({ ...current, slug: event.target.value }))
+            }
+          />
+          <Input
+            placeholder="Excerpt"
+            value={page.excerpt}
+            onChange={(event) =>
+              setPage((current) => ({
+                ...current,
+                excerpt: event.target.value,
+              }))
+            }
+          />
+          <RichTextEditor
+            value={page.body}
+            onChange={(body) => setPage((current) => ({ ...current, body }))}
+          />
+          <Button type="submit" className="w-full">
+            Save draft page
+          </Button>
+        </form>
+      </AdminCard>
+    </div>
+  )
+}
+
+function Multi({
+  label,
+  value,
+  items,
+  onChange,
+}: {
+  label: string
+  value: string[]
+  items: Named[]
+  onChange: (value: string[]) => void
+}) {
+  return (
+    <Field label={label}>
+      <select
+        multiple
+        className="min-h-36 w-full border border-outline-variant bg-white p-2 text-sm"
+        value={value}
+        onChange={(event) =>
+          onChange(
+            Array.from(
+              event.currentTarget.selectedOptions,
+              (option) => option.value
+            )
+          )
+        }
+      >
+        {items.map((item) => (
+          <option key={item.id} value={item.id}>
+            {item.name}
+          </option>
+        ))}
+      </select>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Ctrl/Cmd-click to select multiple.
+      </p>
+    </Field>
+  )
+}
+function Field({
+  label,
+  children,
+}: {
+  label: string
+  children: React.ReactNode
+}) {
+  return (
+    <label className="block space-y-1.5 text-sm font-medium">
+      <span>{label}</span>
+      {children}
+    </label>
   )
 }

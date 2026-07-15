@@ -15,6 +15,9 @@ export async function PATCH(
     const id = (await context.params).sectionId
     const { items, productIds, categoryIds, collectionIds, ...data } =
       parsed.data
+    delete data.key
+    delete data.type
+    delete data.sortOrder
     const section = await prisma.$transaction(async (tx) => {
       if (items) {
         await tx.homepageSectionItem.deleteMany({ where: { sectionId: id } })

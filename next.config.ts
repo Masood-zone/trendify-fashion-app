@@ -9,6 +9,11 @@ const nextConfig: NextConfig = {
         port: "",
         pathname: "/aida-public/**",
       },
+      {
+        protocol: "https",
+        hostname: "res.cloudinary.com",
+        pathname: "/**",
+      },
     ],
   },
 }

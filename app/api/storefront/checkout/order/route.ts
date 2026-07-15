@@ -11,7 +11,12 @@ export async function POST(request: Request) {
           orderId: result.order.id,
           orderNumber: result.order.orderNumber,
           totalPesewas: result.order.totalPesewas,
+          subtotalPesewas: result.order.subtotalPesewas,
+          discountPesewas: result.order.discountPesewas,
+          taxPesewas: result.order.taxPesewas,
+          deliveryFeePesewas: result.order.deliveryFeePesewas,
           currency: result.order.currency,
+          reservationExpiresAt: result.order.reservationExpiresAt,
           guestAccessToken: result.guestAccessToken,
         },
         { status: 201 }

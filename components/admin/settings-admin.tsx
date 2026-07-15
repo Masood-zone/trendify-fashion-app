@@ -372,12 +372,24 @@ function CheckoutForm({
   const [reservationMinutes, setReservationMinutes] = useState(
     String(config.reservationMinutes ?? 20)
   )
+  const [taxPercent, setTaxPercent] = useState(
+    String(Number(config.taxRateBasisPoints ?? 0) / 100)
+  )
+  const [freeDeliveryThreshold, setFreeDeliveryThreshold] = useState(
+    config.freeDeliveryThresholdPesewas == null
+      ? ""
+      : String(Number(config.freeDeliveryThresholdPesewas) / 100)
+  )
   const save = async () => {
     await api.patch("/admin/settings", {
       checkoutConfig: {
         ...config,
         guestCheckout,
         reservationMinutes: Number(reservationMinutes),
+        taxRateBasisPoints: Math.round(Number(taxPercent || 0) * 100),
+        freeDeliveryThresholdPesewas: freeDeliveryThreshold
+          ? Math.round(Number(freeDeliveryThreshold) * 100)
+          : null,
         country: "GH",
         currency: "GHS",
       },
@@ -404,6 +416,26 @@ function CheckoutForm({
           max="180"
           value={reservationMinutes}
           onChange={(e) => setReservationMinutes(e.target.value)}
+        />
+      </Field>
+      <Field label="Tax rate (%)">
+        <Input
+          type="number"
+          min="0"
+          max="100"
+          step="0.01"
+          value={taxPercent}
+          onChange={(e) => setTaxPercent(e.target.value)}
+        />
+      </Field>
+      <Field label="Free-delivery threshold (GHS, optional)">
+        <Input
+          type="number"
+          min="0"
+          step="0.01"
+          placeholder="No automatic free delivery"
+          value={freeDeliveryThreshold}
+          onChange={(e) => setFreeDeliveryThreshold(e.target.value)}
         />
       </Field>
       <p className="text-sm text-muted-foreground">

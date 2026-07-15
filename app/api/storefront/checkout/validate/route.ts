@@ -12,6 +12,7 @@ export async function POST(request: Request) {
       return ok({
         subtotalPesewas: result.subtotalPesewas,
         discountPesewas: result.discountPesewas,
+        taxPesewas: result.taxPesewas,
         deliveryFeePesewas: result.deliveryFeePesewas,
         totalPesewas: result.totalPesewas,
         currency: "GHS",

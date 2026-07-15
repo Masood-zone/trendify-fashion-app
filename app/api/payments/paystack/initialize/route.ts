@@ -57,6 +57,7 @@ export async function POST(request: Request) {
         currency: "GHS",
         email: order.email,
         reference,
+        callback_url: `${new URL(request.url).origin}/checkout/result`,
         metadata: {
           orderId: order.id,
           orderNumber: order.orderNumber,

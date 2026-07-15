@@ -12,6 +12,7 @@ export type PaystackInitializeInput = {
   email: string
   metadata: Record<string, unknown>
   reference: string
+  callback_url: string
 }
 
 export type PaystackInitializeData = {

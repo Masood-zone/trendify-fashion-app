@@ -3,6 +3,7 @@ import { requireAdmin } from "@/lib/admin-api"
 import { invalid, ok, serverError } from "@/lib/api-response"
 import { prisma } from "@/lib/prisma"
 import { auditAdmin } from "@/services/admin/audit"
+import { canonicalHomepageSlot } from "@/services/storefront/homepage"
 export const homepageSchema = z.object({
   key: z
     .string()
@@ -54,6 +55,13 @@ export async function GET(request: Request) {
     return ok(
       await prisma.homepageSection.findMany({
         where: { deletedAt: null },
+        include: {
+          mediaAsset: true,
+          items: { orderBy: { sortOrder: "asc" } },
+          products: { orderBy: { sortOrder: "asc" } },
+          categories: { orderBy: { sortOrder: "asc" } },
+          collections: { orderBy: { sortOrder: "asc" } },
+        },
         orderBy: { sortOrder: "asc" },
       })
     )
@@ -67,11 +75,28 @@ export async function POST(request: Request) {
   try {
     const parsed = homepageSchema.safeParse(await request.json())
     if (!parsed.success) return invalid(parsed.error)
+    const canonical = canonicalHomepageSlot(parsed.data.key)
+    if (!canonical)
+      return Response.json(
+        { success: false, message: "Homepage slots are fixed by the storefront design" },
+        { status: 422 }
+      )
     const { items, productIds, categoryIds, collectionIds, ...data } =
       parsed.data
-    const section = await prisma.homepageSection.create({
-      data: {
+    const section = await prisma.homepageSection.upsert({
+      where: { key: canonical.key },
+      update: {
         ...data,
+        key: canonical.key,
+        type: canonical.type,
+        sortOrder: canonical.sortOrder,
+        config: data.config as never,
+      },
+      create: {
+        ...data,
+        key: canonical.key,
+        type: canonical.type,
+        sortOrder: canonical.sortOrder,
         config: data.config as never,
         items: items ? { create: items } : undefined,
         products: productIds
