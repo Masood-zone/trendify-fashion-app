@@ -82,7 +82,7 @@ export async function uploadBuffer(args: {
     (resolve, reject) => {
       const stream = cloudinary.uploader.upload_stream(
         {
-          folder: args.folder || "amanah-welfare/uploads",
+          folder: args.folder || "trendify-gh/uploads",
           filename_override: args.filename,
           resource_type: resourceType,
           timestamp,

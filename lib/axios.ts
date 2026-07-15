@@ -1,22 +1,12 @@
-import axios, { AxiosInstance, InternalAxiosRequestConfig } from "axios";
+import axios, { AxiosInstance } from "axios"
 
 const api: AxiosInstance = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL || "/api",
+  baseURL: process.env.NEXT_PUBLIC_API_BASE_URL || "/api",
   withCredentials: true,
   headers: {
     "Content-Type": "application/json",
   },
-});
-
-// Request interceptor
-api.interceptors.request.use(
-  (config: InternalAxiosRequestConfig) => {
-    return config;
-  },
-  (error) => {
-    return Promise.reject(error);
-  },
-);
+})
 
 // Response interceptor
 api.interceptors.response.use(
@@ -25,11 +15,11 @@ api.interceptors.response.use(
     // Handle 401 Unauthorized
     if (error.response?.status === 401) {
       if (typeof window !== "undefined") {
-        window.location.href = "/login";
+        window.location.href = "/login"
       }
     }
-    return Promise.reject(error);
-  },
-);
+    return Promise.reject(error)
+  }
+)
 
-export default api;
+export default api

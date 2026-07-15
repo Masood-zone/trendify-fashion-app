@@ -1,10 +1,9 @@
 import type { Metadata } from "next"
 import { Geist_Mono, Manrope, Playfair_Display } from "next/font/google"
-
-import { ThemeProvider } from "@/components/theme-provider"
 import { cn } from "@/lib/utils"
 
 import "./globals.css"
+import { Providers } from "@/components/providers/providers"
 
 const playfairDisplay = Playfair_Display({
   subsets: ["latin"],
@@ -42,8 +41,21 @@ export default function RootLayout({
         geistMono.variable
       )}
     >
+      <head>
+        <meta charSet="utf-8" />
+        {/* Prototype icon fonts */}
+        {/* eslint-disable-next-line @next/next/no-page-custom-font */}
+        <link
+          rel="stylesheet"
+          href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
+        />
+        <link
+          rel="stylesheet"
+          href="https://fonts.googleapis.com/icon?family=Material+Icons"
+        />
+      </head>
       <body>
-        <ThemeProvider defaultTheme="light">{children}</ThemeProvider>
+        <Providers>{children}</Providers>
       </body>
     </html>
   )
