@@ -379,9 +379,8 @@ export function VerifyEmailForm() {
             email: email.toLowerCase(),
             type: "email-verification",
           })
-          result.error
-            ? toast.error(result.error.message)
-            : toast.success("A new code has been sent")
+          if (result.error) toast.error(result.error.message)
+          else toast.success("A new code has been sent")
         }}
       >
         Resend code

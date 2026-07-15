@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { toast } from "sonner"
 
 import FileUpload from "@/components/common/FileUpload"
@@ -343,7 +343,7 @@ function SectionForm({
             <FileUpload
               uploadMode="single"
               uploadToCloudinary
-                cloudinaryPurpose="homepageMedia"
+              cloudinaryPurpose="homepageMedia"
               acceptedFileTypes={{
                 "image/*": [".png", ".jpg", ".jpeg", ".webp"],
               }}
@@ -435,16 +435,6 @@ function PagesEditor({
     body: "",
     status: "DRAFT",
   })
-  useEffect(() => {
-    if (!page.slug && page.title)
-      setPage((current) => ({
-        ...current,
-        slug: current.title
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, "-")
-          .replace(/^-|-$/g, ""),
-      }))
-  }, [page.slug, page.title])
   return (
     <div className="grid gap-6 xl:grid-cols-[1fr_420px]">
       <div className="space-y-3">
@@ -497,9 +487,19 @@ function PagesEditor({
             required
             placeholder="Title"
             value={page.title}
-            onChange={(event) =>
-              setPage((current) => ({ ...current, title: event.target.value }))
-            }
+            onChange={(event) => {
+              const title = event.target.value
+              setPage((current) => ({
+                ...current,
+                title,
+                slug: current.slug
+                  ? current.slug
+                  : title
+                      .toLowerCase()
+                      .replace(/[^a-z0-9]+/g, "-")
+                      .replace(/^-|-$/g, ""),
+              }))
+            }}
           />
           <Input
             required

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { useQuery } from "@tanstack/react-query"
 import { toast } from "sonner"
@@ -24,7 +24,7 @@ const blank: Partial<CheckoutInput> = {
   email: "",
   phone: "",
   alternatePhone: "",
-  deliveryRegion: "Greater Accra",
+  deliveryRegion: "",
   deliveryCityTown: "",
   deliveryAreaSuburb: "",
   deliveryGhanaPostGps: "",
@@ -38,7 +38,7 @@ export function DeliveryPage() {
   const router = useRouter()
   const { data: session } = useSession()
   const cart = useCart()
-  const [form, setForm] = useState<Partial<CheckoutInput>>(() => ({
+  const [draft, setDraft] = useState<Partial<CheckoutInput>>(() => ({
     ...blank,
     ...readCheckoutSession().input,
   }))
@@ -61,33 +61,38 @@ export function DeliveryPage() {
         "Addresses could not be loaded"
       ),
   })
-  useEffect(() => {
-    if (!profile.data) return
-    const address = addresses.data?.find((item) => item.isDefault)
-    setForm((current) => ({
-      ...current,
-      customerName: current.customerName || profile.data.name,
-      email: current.email || profile.data.email,
-      phone: current.phone || profile.data.phoneNumber || address?.phone || "",
-      deliveryRegion: current.deliveryRegion || address?.region,
-      deliveryCityTown: current.deliveryCityTown || address?.cityTown,
+  const defaultAddress = addresses.data?.find((item) => item.isDefault)
+  const form = useMemo<Partial<CheckoutInput>>(
+    () => ({
+      ...draft,
+      customerName: draft.customerName || profile.data?.name || "",
+      email: draft.email || profile.data?.email || "",
+      phone:
+        draft.phone || profile.data?.phoneNumber || defaultAddress?.phone || "",
+      deliveryRegion:
+        draft.deliveryRegion || defaultAddress?.region || "Greater Accra",
+      deliveryCityTown:
+        draft.deliveryCityTown || defaultAddress?.cityTown || "",
       deliveryAreaSuburb:
-        current.deliveryAreaSuburb || address?.areaSuburb || "",
+        draft.deliveryAreaSuburb || defaultAddress?.areaSuburb || "",
       deliveryGhanaPostGps:
-        current.deliveryGhanaPostGps || address?.ghanaPostGps || "",
+        draft.deliveryGhanaPostGps || defaultAddress?.ghanaPostGps || "",
       deliveryStreetAddress:
-        current.deliveryStreetAddress || address?.streetAddress,
+        draft.deliveryStreetAddress || defaultAddress?.streetAddress || "",
       deliveryNearbyLandmark:
-        current.deliveryNearbyLandmark || address?.nearbyLandmark || "",
+        draft.deliveryNearbyLandmark || defaultAddress?.nearbyLandmark || "",
       deliveryInstructions:
-        current.deliveryInstructions || address?.deliveryInstructions || "",
-    }))
-  }, [addresses.data, profile.data])
+        draft.deliveryInstructions ||
+        defaultAddress?.deliveryInstructions ||
+        "",
+    }),
+    [defaultAddress, draft, profile.data]
+  )
   useEffect(() => {
     if (!cart.isLoading && !cart.data?.items.length) router.replace("/cart")
   }, [cart.data?.items.length, cart.isLoading, router])
   const set = (key: keyof CheckoutInput, value: string) =>
-    setForm((current) => ({ ...current, [key]: value }))
+    setDraft((current) => ({ ...current, [key]: value }))
   if (!cart.isLoading && !cart.data?.items.length) return null
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
