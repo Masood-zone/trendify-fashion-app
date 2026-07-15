@@ -5,7 +5,6 @@ import { prisma } from "@/lib/prisma"
 const schema = z.object({
   firstName: z.string().trim().min(1).max(80),
   lastName: z.string().trim().min(1).max(80),
-  phoneNumber: z.string().trim().min(9).max(20).optional().nullable(),
   image: z.url().optional().nullable(),
 })
 export async function GET(request: Request) {

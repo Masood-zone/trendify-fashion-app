@@ -1,6 +1,12 @@
-import { OrderEventType, OrderStatus } from "@/app/generated/prisma/enums"
+import {
+  NotificationTemplate,
+  OrderEventType,
+  OrderStatus,
+} from "@/app/generated/prisma/enums"
 import { prisma } from "@/lib/prisma"
 import { releaseInventory } from "@/services/inventory/inventory"
+import { enqueueOrderNotification } from "@/services/notifications/events"
+import { scheduleNotificationDelivery } from "@/services/notifications/outbox"
 import { reconcilePaystackPayment } from "@/services/payments/payment-workflow"
 
 export async function releaseExpiredReservations(now = new Date()) {
@@ -9,7 +15,16 @@ export async function releaseExpiredReservations(now = new Date()) {
       status: OrderStatus.PENDING_PAYMENT,
       reservationExpiresAt: { lte: now },
     },
-    select: { id: true },
+    select: {
+      id: true,
+      orderNumber: true,
+      userId: true,
+      customerName: true,
+      email: true,
+      phone: true,
+      totalPesewas: true,
+      currency: true,
+    },
     take: 100,
   })
   let released = 0
@@ -46,9 +61,9 @@ export async function releaseExpiredReservations(now = new Date()) {
         },
         data: { status: OrderStatus.CANCELLED, cancelledAt: now },
       })
-      if (!claim.count) return false
+      if (!claim.count) return null
       await releaseInventory(tx, order.id)
-      await tx.orderEvent.create({
+      const event = await tx.orderEvent.create({
         data: {
           orderId: order.id,
           type: OrderEventType.CANCELLED,
@@ -60,9 +75,22 @@ export async function releaseExpiredReservations(now = new Date()) {
         where: { orderId: order.id, status: { in: ["INITIALIZED", "PENDING"] } },
         data: { status: "CANCELLED", failureMessage: "Payment window expired" },
       })
-      return true
+      const eventKey = `order-event:${event.id}`
+      await enqueueOrderNotification(tx, {
+        eventKey,
+        template: NotificationTemplate.ORDER_STATUS_UPDATED,
+        order,
+        extra: {
+          status: OrderStatus.CANCELLED,
+          note: "The payment window expired and reserved stock was released.",
+        },
+      })
+      return eventKey
     })
-    if (changed) released += 1
+    if (changed) {
+      released += 1
+      scheduleNotificationDelivery([changed])
+    }
   }
   return { examined: orders.length, released }
 }

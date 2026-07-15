@@ -138,6 +138,28 @@ enum RecommendationType {
   SIMILAR
 }
 
+enum NotificationChannel {
+  EMAIL
+  SMS
+}
+
+enum NotificationDeliveryStatus {
+  PENDING
+  PROCESSING
+  SENT
+  FAILED
+}
+
+enum NotificationTemplate {
+  PASSWORD_RESET_SUCCESS
+  ORDER_PLACED
+  PAYMENT_SUCCESS
+  PAYMENT_FAILED
+  ORDER_STATUS_UPDATED
+  TRACKING_UPDATED
+  REFUND_CONFIRMED
+}
+
 model User {
   id                  String    @id @default(cuid())
   name                String
@@ -1028,4 +1050,27 @@ model AuditLog {
   @@index([actorId, createdAt])
   @@index([entityType, entityId])
   @@index([action])
+}
+
+model NotificationDelivery {
+  id                  String                     @id @default(cuid())
+  eventKey            String
+  channel             NotificationChannel
+  template            NotificationTemplate
+  recipient           String
+  payload             Json
+  status              NotificationDeliveryStatus @default(PENDING)
+  attempts            Int                        @default(0)
+  nextAttemptAt       DateTime                   @default(now())
+  processingStartedAt DateTime?
+  providerMessageId   String?
+  lastError           String?
+  sentAt              DateTime?
+  createdAt           DateTime                   @default(now())
+  updatedAt           DateTime                   @updatedAt
+
+  @@unique([eventKey, channel])
+  @@index([status, nextAttemptAt])
+  @@index([processingStartedAt])
+  @@index([createdAt])
 }

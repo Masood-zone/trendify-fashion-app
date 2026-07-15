@@ -1,4 +1,5 @@
 import {
+  NotificationTemplate,
   OrderEventType,
   OrderStatus,
   PaymentStatus,
@@ -9,6 +10,8 @@ import {
   commitInventorySale,
   releaseInventory,
 } from "@/services/inventory/inventory"
+import { enqueueOrderNotification } from "@/services/notifications/events"
+import { scheduleNotificationDelivery } from "@/services/notifications/outbox"
 
 const pendingProviderStatuses = new Set([
   "pending",
@@ -58,7 +61,7 @@ export async function reconcilePaystackPayment(reference: string) {
   const checkedAt = new Date()
 
   if (providerStatus === "success") {
-    return prisma.$transaction(
+    const result = await prisma.$transaction(
       async (tx) => {
         const payment = await tx.payment.findUniqueOrThrow({
           where: { reference },
@@ -70,6 +73,7 @@ export async function reconcilePaystackPayment(reference: string) {
             order: payment.order,
             providerStatus,
             confirmed: true,
+            notificationEventKeys: [] as string[],
           }
         }
 
@@ -105,6 +109,7 @@ export async function reconcilePaystackPayment(reference: string) {
             order: payment.order,
             providerStatus,
             confirmed: false,
+            notificationEventKeys: [] as string[],
           }
         }
 
@@ -130,19 +135,29 @@ export async function reconcilePaystackPayment(reference: string) {
             title: "Payment confirmed by Paystack",
           },
         })
+        const eventKey = `payment:${updatedPayment.id}:success`
+        await enqueueOrderNotification(tx, {
+          eventKey,
+          template: NotificationTemplate.PAYMENT_SUCCESS,
+          order,
+          extra: { amountPesewas: updatedPayment.amountPesewas },
+        })
         return {
           payment: updatedPayment,
           order,
           providerStatus,
           confirmed: true,
+          notificationEventKeys: [eventKey],
         }
       },
       { isolationLevel: "Serializable" }
     )
+    scheduleNotificationDelivery(result.notificationEventKeys)
+    return result
   }
 
   if (providerStatus === "failed" || providerStatus === "reversed") {
-    return prisma.$transaction(
+    const result = await prisma.$transaction(
       async (tx) => {
         const payment = await tx.payment.update({
           where: { id: local.id },
@@ -184,33 +199,73 @@ export async function reconcilePaystackPayment(reference: string) {
             })
           }
         }
-        return { payment, order, providerStatus, confirmed: false }
+        const eventKey = `payment:${payment.id}:failed`
+        await enqueueOrderNotification(tx, {
+          eventKey,
+          template: NotificationTemplate.PAYMENT_FAILED,
+          order,
+          extra: {
+            note:
+              payment.failureMessage ||
+              `Paystack reported ${providerStatus}.`,
+          },
+        })
+        return {
+          payment,
+          order,
+          providerStatus,
+          confirmed: false,
+          notificationEventKeys: [eventKey],
+        }
       },
       { isolationLevel: "Serializable" }
     )
+    scheduleNotificationDelivery(result.notificationEventKeys)
+    return result
   }
 
-  const payment = await prisma.payment.update({
-    where: { id: local.id },
-    data: {
-      status:
-        providerStatus === "abandoned"
-          ? PaymentStatus.FAILED
-          : pendingProviderStatuses.has(providerStatus)
-            ? PaymentStatus.PENDING
-            : local.status,
+  const result = await prisma.$transaction(async (tx) => {
+    const payment = await tx.payment.update({
+      where: { id: local.id },
+      data: {
+        status:
+          providerStatus === "abandoned"
+            ? PaymentStatus.FAILED
+            : pendingProviderStatuses.has(providerStatus)
+              ? PaymentStatus.PENDING
+              : local.status,
+        providerStatus,
+        gatewayResponse: provider.gateway_response,
+        failureCode: providerStatus === "abandoned" ? "ABANDONED" : undefined,
+        failureMessage:
+          providerStatus === "abandoned"
+            ? provider.gateway_response || "Payment was abandoned"
+            : undefined,
+        lastCheckedAt: checkedAt,
+        verificationAttempts: { increment: 1 },
+      },
+    })
+    const eventKeys: string[] = []
+    if (providerStatus === "abandoned") {
+      const eventKey = `payment:${payment.id}:failed`
+      await enqueueOrderNotification(tx, {
+        eventKey,
+        template: NotificationTemplate.PAYMENT_FAILED,
+        order: local.order,
+        extra: { note: payment.failureMessage || "Payment was abandoned." },
+      })
+      eventKeys.push(eventKey)
+    }
+    return {
+      payment,
+      order: local.order,
       providerStatus,
-      gatewayResponse: provider.gateway_response,
-      failureCode: providerStatus === "abandoned" ? "ABANDONED" : undefined,
-      failureMessage:
-        providerStatus === "abandoned"
-          ? provider.gateway_response || "Payment was abandoned"
-          : undefined,
-      lastCheckedAt: checkedAt,
-      verificationAttempts: { increment: 1 },
-    },
+      confirmed: false,
+      notificationEventKeys: eventKeys,
+    }
   })
-  return { payment, order: local.order, providerStatus, confirmed: false }
+  scheduleNotificationDelivery(result.notificationEventKeys)
+  return result
 }
 
 export async function reconcilePendingPaystackPayments(limit = 100) {

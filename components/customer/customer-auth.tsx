@@ -12,7 +12,7 @@ import { z } from "zod"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import api from "@/lib/axios"
+import { PhoneVerificationPanel } from "@/components/customer/phone-verification"
 import { authClient } from "@/lib/auth-client"
 import { toastFormErrors } from "@/lib/form-toast"
 import { normalizeGhanaPhone, safeInternalPath } from "@/lib/safe-redirect"
@@ -49,7 +49,7 @@ const verifyEmailSchema = z.object({
 })
 
 const passwordRequestSchema = z.object({
-  email: z.string().trim().email("Enter a valid email address"),
+  identity: z.string().trim().min(1, "Enter your email or phone number"),
 })
 
 const passwordResetSchema = z
@@ -261,6 +261,8 @@ export function RegisterForm() {
       const email = values.email.toLowerCase()
       const result = await authClient.signUp.email({
         name: `${values.firstName} ${values.lastName}`,
+        firstName: values.firstName,
+        lastName: values.lastName,
         email,
         password: values.password,
       })
@@ -276,16 +278,14 @@ export function RegisterForm() {
         "trendify_pending_verification",
         JSON.stringify({ email, callback })
       )
-      sessionStorage.setItem(
-        "trendify_pending_profile",
-        JSON.stringify({
-          firstName: values.firstName,
-          lastName: values.lastName,
-          phoneNumber: values.phoneNumber
-            ? normalizeGhanaPhone(values.phoneNumber)
-            : undefined,
-        })
-      )
+      if (values.phoneNumber) {
+        sessionStorage.setItem(
+          "trendify_pending_phone",
+          normalizeGhanaPhone(values.phoneNumber)
+        )
+      } else {
+        sessionStorage.removeItem("trendify_pending_phone")
+      }
       toast.success(
         "Account created. Check your email for the verification code."
       )
@@ -435,19 +435,13 @@ export function VerifyEmailForm() {
         return
       }
       toast.success("Email verified successfully")
-      try {
-        const pendingProfile = JSON.parse(
-          sessionStorage.getItem("trendify_pending_profile") || "null"
-        )
-        if (pendingProfile) await api.patch("/customer/profile", pendingProfile)
-        sessionStorage.removeItem("trendify_pending_profile")
-        sessionStorage.removeItem("trendify_pending_verification")
-      } catch {
-        toast.warning(
-          "Your email is verified. Complete the remaining profile details in account settings."
-        )
-      }
-      router.push(callback)
+      const pendingPhone = sessionStorage.getItem("trendify_pending_phone")
+      sessionStorage.removeItem("trendify_pending_verification")
+      router.push(
+        pendingPhone
+          ? `/verify-phone?phone=${encodeURIComponent(pendingPhone)}&callbackURL=${encodeURIComponent(callback)}`
+          : callback
+      )
       router.refresh()
     } catch {
       const message = "Verification could not be completed. Please try again."
@@ -530,12 +524,45 @@ export function VerifyEmailForm() {
   )
 }
 
+export function VerifyPhoneForm() {
+  const router = useRouter()
+  const params = useSearchParams()
+  const callback = safeInternalPath(params.get("callbackURL"), "/account")
+  const initialPhone =
+    params.get("phone") ||
+    (typeof window !== "undefined"
+      ? sessionStorage.getItem("trendify_pending_phone") || ""
+      : "")
+
+  function finish() {
+    sessionStorage.removeItem("trendify_pending_phone")
+    router.push(callback)
+    router.refresh()
+  }
+
+  return (
+    <AuthFrame title="Verify your phone">
+      <p className="mt-2 text-muted-foreground">
+        Add a verified phone for secure recovery and account access. You can skip this and verify later in settings.
+      </p>
+      <div className="mt-10">
+        <PhoneVerificationPanel
+          initialPhone={initialPhone}
+          onVerified={finish}
+          onSkip={finish}
+        />
+      </div>
+    </AuthFrame>
+  )
+}
+
 export function ForgotPasswordForm() {
   const router = useRouter()
   const [step, setStep] = useState<"request" | "reset">("request")
+  const [method, setMethod] = useState<"email" | "phone">("email")
   const requestForm = useForm<PasswordRequestValues>({
     resolver: zodResolver(passwordRequestSchema),
-    defaultValues: { email: "" },
+    defaultValues: { identity: "" },
   })
   const resetForm = useForm<PasswordResetValues>({
     resolver: zodResolver(passwordResetSchema),
@@ -546,17 +573,31 @@ export function ForgotPasswordForm() {
   async function requestCode(values: PasswordRequestValues) {
     requestForm.clearErrors("root")
     try {
-      const result = await authClient.emailOtp.requestPasswordReset({
-        email: values.email.toLowerCase(),
-      })
+      const usingPhone = !values.identity.includes("@")
+      const identity = usingPhone
+        ? normalizeGhanaPhone(values.identity)
+        : values.identity.toLowerCase()
+      if (usingPhone && !/^\+233\d{9}$/.test(identity)) {
+        requestForm.setError("identity", {
+          message: "Enter a valid Ghanaian phone number",
+        })
+        return
+      }
+      const result = usingPhone
+        ? await authClient.phoneNumber.requestPasswordReset({ phoneNumber: identity })
+        : await authClient.emailOtp.requestPasswordReset({ email: identity })
       if (result.error) {
-        const message = result.error.message || "Reset request failed"
+        const message = "The reset request could not be completed. Please try again."
         requestForm.setError("root", { message })
         toast.error(message)
         return
       }
+      requestForm.setValue("identity", identity)
+      setMethod(usingPhone ? "phone" : "email")
       setStep("reset")
-      toast.success("Check your email for the reset code")
+      toast.success(
+        `If the account exists, a reset code has been sent by ${usingPhone ? "SMS" : "email"}.`
+      )
     } catch {
       const message =
         "The reset request could not be completed. Please try again."
@@ -568,11 +609,19 @@ export function ForgotPasswordForm() {
   async function resetPassword(values: PasswordResetValues) {
     resetForm.clearErrors("root")
     try {
-      const result = await authClient.emailOtp.resetPassword({
-        email: requestForm.getValues("email").toLowerCase(),
-        otp: values.otp,
-        password: values.password,
-      })
+      const identity = requestForm.getValues("identity")
+      const result =
+        method === "phone"
+          ? await authClient.phoneNumber.resetPassword({
+              phoneNumber: identity,
+              otp: values.otp,
+              newPassword: values.password,
+            })
+          : await authClient.emailOtp.resetPassword({
+              email: identity,
+              otp: values.otp,
+              password: values.password,
+            })
       if (result.error) {
         const message = result.error.message || "Password reset failed"
         resetForm.setError("root", { message })
@@ -593,7 +642,7 @@ export function ForgotPasswordForm() {
       {step === "request" ? (
         <>
           <p className="mt-2 text-muted-foreground">
-            We will send a single-use reset code if the account exists.
+            Enter your email or verified Ghanaian phone number. We will send a single-use code if the account exists.
           </p>
           <form
             className="mt-10 space-y-6"
@@ -601,14 +650,13 @@ export function ForgotPasswordForm() {
             noValidate
           >
             <Field
-              label="Email address"
-              error={requestForm.formState.errors.email?.message}
+              label="Email or phone number"
+              error={requestForm.formState.errors.identity?.message}
             >
               <Input
-                type="email"
-                autoComplete="email"
-                aria-invalid={Boolean(requestForm.formState.errors.email)}
-                {...requestForm.register("email")}
+                autoComplete="username"
+                aria-invalid={Boolean(requestForm.formState.errors.identity)}
+                {...requestForm.register("identity")}
               />
             </Field>
             <FormError message={requestForm.formState.errors.root?.message} />
@@ -627,7 +675,7 @@ export function ForgotPasswordForm() {
       ) : (
         <>
           <p className="mt-2 text-muted-foreground">
-            Enter the code and choose a new password.
+            Enter the code sent by {method === "phone" ? "SMS" : "email"} and choose a new password.
           </p>
           <form
             className="mt-10 space-y-5"

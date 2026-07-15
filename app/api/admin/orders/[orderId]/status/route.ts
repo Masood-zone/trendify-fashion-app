@@ -1,10 +1,16 @@
 import { z } from "zod"
-import { OrderEventType, OrderStatus } from "@/app/generated/prisma/enums"
+import {
+  NotificationTemplate,
+  OrderEventType,
+  OrderStatus,
+} from "@/app/generated/prisma/enums"
 import { requireAdmin } from "@/lib/admin-api"
 import { fail, invalid, ok, serverError } from "@/lib/api-response"
 import { prisma } from "@/lib/prisma"
 import { auditAdmin } from "@/services/admin/audit"
 import { releaseInventory } from "@/services/inventory/inventory"
+import { enqueueOrderNotification } from "@/services/notifications/events"
+import { scheduleNotificationDelivery } from "@/services/notifications/outbox"
 const schema = z.object({
   status: z.enum([
     "PROCESSING",
@@ -40,7 +46,7 @@ export async function PATCH(
         409
       )
     const status = parsed.data.status as OrderStatus
-    const order = await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
       if (
         status === OrderStatus.CANCELLED &&
         current.status === OrderStatus.PENDING_PAYMENT
@@ -59,7 +65,7 @@ export async function PATCH(
             : {}),
         },
       })
-      await tx.orderEvent.create({
+      const event = await tx.orderEvent.create({
         data: {
           orderId: id,
           actorId: guard.session.user.id,
@@ -68,13 +74,21 @@ export async function PATCH(
           description: parsed.data.note,
         },
       })
-      return updated
+      const eventKey = `order-event:${event.id}`
+      await enqueueOrderNotification(tx, {
+        eventKey,
+        template: NotificationTemplate.ORDER_STATUS_UPDATED,
+        order: updated,
+        extra: { status, note: parsed.data.note },
+      })
+      return { order: updated, eventKey }
     })
     await auditAdmin(guard.session.user.id, "order.status", "Order", id, {
       from: current.status,
       to: status,
     })
-    return ok(order)
+    scheduleNotificationDelivery([result.eventKey])
+    return ok(result.order)
   } catch (error) {
     return serverError(error)
   }

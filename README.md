@@ -68,7 +68,8 @@ The storefront is designed around Ghanaian fashion and craftsmanship. Prices are
 - Sign-in using a Ghanaian phone number and password when a phone is attached to the account.
 - Six-digit, hashed email OTP verification with automatic sign-in after verification.
 - OTP-based password recovery and session revocation after a password reset.
-- Optional SMS OTP delivery through Uello Send.
+- Optional verified-phone setup, phone sign-in, and phone-based password recovery through Uello Send.
+- Transactional email and SMS for order placement, payment results, fulfillment, tracking, cancellation, and delivery.
 - Account dashboard, profile settings, address book, wishlist, order history, and detailed order tracking.
 - Reviews restricted to products from delivered customer orders.
 - Review editing and removal, with edited reviews returned to the moderation queue.
@@ -276,8 +277,11 @@ types/
    # Optional Uello Send SMS delivery
    UELLOSEND_API_URL=""
    UELLOSEND_API_KEY=""
-   UELLOSEND_API_SECRET=""
    UELLOSEND_SENDER_ID="TrendifyGH"
+
+   # Transactional delivery controls
+   NOTIFICATION_DELIVERY_ENABLED="true"
+   NOTIFICATION_DRY_RUN="false"
 
    # Protected scheduled jobs
    CRON_SECRET="replace-with-another-long-random-secret"
@@ -332,8 +336,10 @@ types/
 | `SMTP_USER` / `SMTP_PASS`                       | Email OTP                    | SMTP credentials when authentication is required.                                          |
 | `SMTP_FROM`                                     | Email OTP                    | Sender identity; falls back to `SMTP_USER`.                                                |
 | `UELLOSEND_API_URL`                             | SMS OTP                      | Optional unless phone OTP delivery is enabled for users.                                   |
-| `UELLOSEND_API_KEY` / `UELLOSEND_API_SECRET`    | SMS OTP                      | Uello Send request credentials.                                                            |
+| `UELLOSEND_API_KEY`                            | SMS OTP and notifications    | Sent as `api_key` in the official Uello Send quicksend JSON body.                          |
 | `UELLOSEND_SENDER_ID`                           | SMS OTP                      | Defaults to `TrendifyGH`.                                                                  |
+| `NOTIFICATION_DELIVERY_ENABLED`                 | Transactional delivery       | Set to `false` to pause outbound delivery while retaining queued jobs.                     |
+| `NOTIFICATION_DRY_RUN`                          | Transactional delivery       | Set to `true` to exercise delivery without contacting SMTP or Uello Send.                  |
 | `CRON_SECRET`                                   | Scheduled jobs               | Bearer token protecting reconciliation and reservation-expiry endpoints.                   |
 | `ADMIN_NAME` / `ADMIN_EMAIL` / `ADMIN_PASSWORD` | Administrator seed           | Used only by `pnpm.cmd seed:admin`.                                                        |
 
@@ -388,6 +394,7 @@ Configure the deployment scheduler to call these endpoints with an `Authorizatio
 | -------------------------------------- | ------------------------------------------------------------------------------- |
 | `GET /api/cron/payment-reconciliation` | Rechecks initialized and pending Paystack payments.                             |
 | `GET /api/cron/inventory-reservations` | Performs a final payment check, then cancels expired orders and releases stock. |
+| `GET /api/cron/notification-deliveries` | Retries queued email and SMS jobs using capped backoff.                         |
 
 A five-to-ten-minute schedule is suitable for most deployments. Choose a frequency that is shorter than the configured inventory reservation window.
 
@@ -399,7 +406,7 @@ curl.exe -H "Authorization: Bearer $env:CRON_SECRET" http://localhost:3000/api/c
 
 ## Authentication and authorization
 
-Better Auth provides the underlying session and credential management. Customer registration requires email verification. Verification codes are six digits, stored in hashed form, and delivered through the configured SMTP server. Password resets revoke existing sessions.
+Better Auth provides the underlying session and credential management. Customer registration requires email verification, followed by an optional phone-verification step. Verification codes are six digits and remain in Better Auth's short-lived hashed verification storage; plaintext codes are never persisted in the notification outbox. Password recovery accepts either email or a verified Ghanaian phone number and revokes existing sessions after reset.
 
 There are two application roles:
 
@@ -425,6 +432,7 @@ Administrator uploads are sent to Cloudinary and recorded as `MediaAsset` rows. 
 | `pnpm.cmd lint`          | Run ESLint across the repository.               |
 | `pnpm.cmd format`        | Format TypeScript and TSX files with Prettier.  |
 | `pnpm.cmd test:commerce` | Run commerce calculation and utility tests.     |
+| `pnpm.cmd test:notifications` | Run mocked email, SMS, template, and retry tests. |
 | `pnpm.cmd db:generate`   | Generate the Prisma client.                     |
 | `pnpm.cmd db:migrate`    | Apply committed Prisma migrations.              |
 | `pnpm.cmd seed:admin`    | Create or promote the configured administrator. |

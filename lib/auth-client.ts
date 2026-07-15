@@ -2,6 +2,7 @@ import { createAuthClient } from "better-auth/react"
 import {
   adminClient,
   emailOTPClient,
+  inferAdditionalFields,
   phoneNumberClient,
 } from "better-auth/client/plugins"
 
@@ -11,7 +12,17 @@ const AUTH_BASE_URL = `${API_BASE_URL.replace(/\/+$/, "")}/auth`
 
 export const authClient = createAuthClient({
   baseURL: AUTH_BASE_URL,
-  plugins: [adminClient(), emailOTPClient(), phoneNumberClient()],
+  plugins: [
+    adminClient(),
+    emailOTPClient(),
+    phoneNumberClient(),
+    inferAdditionalFields({
+      user: {
+        firstName: { type: "string", required: false },
+        lastName: { type: "string", required: false },
+      },
+    }),
+  ],
 })
 
 export const { signIn, signOut, signUp, useSession } = authClient

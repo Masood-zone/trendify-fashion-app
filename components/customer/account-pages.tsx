@@ -8,8 +8,10 @@ import { Package, Heart, MapPin, ArrowRight, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
 import { ProductCard } from "@/components/storefront/product-card"
+import { PhoneVerificationPanel } from "@/components/customer/phone-verification"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { authClient } from "@/lib/auth-client"
 import api from "@/lib/axios"
 import { formatDate, formatPesewas } from "@/lib/utils"
 import { storefrontRequest } from "@/services/storefront/storefront"
@@ -62,9 +64,75 @@ export function AddressesPage() {
 export function AccountSettingsPage() {
   const client = useQueryClient()
   const profile = useQuery({ queryKey: ["customer", "profile"], queryFn: () => storefrontRequest<CustomerProfileData>(api.get("/customer/profile"), "Profile could not be loaded") })
-  const [form, setForm] = useState<{ firstName: string; lastName: string; phoneNumber: string } | null>(null)
-  const values = form || { firstName: profile.data?.firstName || "", lastName: profile.data?.lastName || "", phoneNumber: profile.data?.phoneNumber || "" }
-  return <main className="page-shell py-10 pb-24 md:py-14"><PageHeader eyebrow="Customer account" title="Account Settings" detail="Keep your contact details accurate for future orders."/>{profile.isLoading ? <Loading/> : <form className="max-w-2xl space-y-5 border border-outline-variant bg-white p-6" onSubmit={async (event) => { event.preventDefault(); await api.patch("/customer/profile", values); client.invalidateQueries({ queryKey: ["customer", "profile"] }); toast.success("Account updated") }}><label className="block text-sm font-medium">First name<Input className="mt-2" value={values.firstName} onChange={(event) => setForm({ ...values, firstName: event.target.value })}/></label><label className="block text-sm font-medium">Last name<Input className="mt-2" value={values.lastName} onChange={(event) => setForm({ ...values, lastName: event.target.value })}/></label><label className="block text-sm font-medium">Email<Input className="mt-2" disabled value={profile.data?.email || ""}/></label><label className="block text-sm font-medium">Phone number<Input className="mt-2" value={values.phoneNumber} onChange={(event) => setForm({ ...values, phoneNumber: event.target.value })}/></label><Button type="submit">Save changes</Button></form>}</main>
+  const [form, setForm] = useState<{ firstName: string; lastName: string } | null>(null)
+  const [changingPhone, setChangingPhone] = useState(false)
+  const values = form || { firstName: profile.data?.firstName || "", lastName: profile.data?.lastName || "" }
+
+  async function refreshProfile() {
+    setChangingPhone(false)
+    await client.invalidateQueries({ queryKey: ["customer", "profile"] })
+  }
+
+  async function startPhoneChange() {
+    if (profile.data?.phoneNumber && !profile.data.phoneNumberVerified) {
+      const result = await authClient.updateUser({ phoneNumber: null })
+      if (result.error) {
+        toast.error(result.error.message)
+        return
+      }
+    }
+    setChangingPhone(true)
+  }
+
+  async function removePhone() {
+    const result = await authClient.updateUser({ phoneNumber: null })
+    if (result.error) {
+      toast.error(result.error.message)
+      return
+    }
+    toast.success("Phone number removed")
+    await refreshProfile()
+  }
+
+  return (
+    <main className="page-shell py-10 pb-24 md:py-14">
+      <PageHeader eyebrow="Customer account" title="Account Settings" detail="Keep your contact details accurate for future orders."/>
+      {profile.isLoading ? <Loading/> : (
+        <div className="max-w-2xl space-y-6">
+          <form className="space-y-5 border border-outline-variant bg-white p-6" onSubmit={async (event) => { event.preventDefault(); await api.patch("/customer/profile", values); await client.invalidateQueries({ queryKey: ["customer", "profile"] }); toast.success("Account updated") }}>
+            <label className="block text-sm font-medium">First name<Input className="mt-2" value={values.firstName} onChange={(event) => setForm({ ...values, firstName: event.target.value })}/></label>
+            <label className="block text-sm font-medium">Last name<Input className="mt-2" value={values.lastName} onChange={(event) => setForm({ ...values, lastName: event.target.value })}/></label>
+            <label className="block text-sm font-medium">Email<Input className="mt-2" disabled value={profile.data?.email || ""}/></label>
+            <Button type="submit">Save profile</Button>
+          </form>
+          <section className="border border-outline-variant bg-white p-6">
+            <h2 className="type-headline-md">Verified phone</h2>
+            <p className="mt-2 text-sm text-muted-foreground">A verified phone can be used for sign-in, password recovery, and security messages.</p>
+            {profile.data?.phoneNumber && !changingPhone ? (
+              <div className="mt-5 flex flex-wrap items-center justify-between gap-4 bg-surface-container p-4">
+                <div>
+                  <p className="font-semibold">{profile.data.phoneNumber}</p>
+                  <p className="text-xs text-muted-foreground">{profile.data.phoneNumberVerified ? "Verified" : "Not yet verified"}</p>
+                </div>
+                <div className="flex gap-2">
+                  <Button type="button" variant="outline" onClick={startPhoneChange}>{profile.data.phoneNumberVerified ? "Change" : "Verify"}</Button>
+                  <Button type="button" variant="ghost" onClick={removePhone}>Remove</Button>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-5">
+                <PhoneVerificationPanel
+                  initialPhone={!profile.data?.phoneNumberVerified ? profile.data?.phoneNumber || "" : ""}
+                  onVerified={refreshProfile}
+                  onSkip={changingPhone ? refreshProfile : undefined}
+                />
+              </div>
+            )}
+          </section>
+        </div>
+      )}
+    </main>
+  )
 }
 
 function Empty({ title, href, action }: { title: string; href: string; action: string }) { return <div className="border border-dashed border-outline-variant p-10 text-center"><h2 className="type-headline-md">{title}</h2><Button className="mt-5" variant="outline" render={<Link href={href}/>}>{action}</Button></div> }

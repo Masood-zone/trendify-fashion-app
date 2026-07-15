@@ -1,10 +1,17 @@
 import { randomBytes } from "node:crypto"
 import { z } from "zod"
 
-import { OrderEventType } from "@/app/generated/prisma/enums"
+import {
+  NotificationTemplate,
+  OrderEventType,
+} from "@/app/generated/prisma/enums"
 import { prisma } from "@/lib/prisma"
 import { hashShopperToken, resolveShopper } from "@/lib/shopper-context"
 import { reserveInventory } from "@/services/inventory/inventory"
+import {
+  enqueueOrderNotification,
+} from "@/services/notifications/events"
+import { scheduleNotificationDelivery } from "@/services/notifications/outbox"
 import { getOrCreateCart } from "@/services/storefront/cart"
 import { evaluatePromotion } from "@/services/storefront/promotions"
 import {
@@ -193,9 +200,15 @@ export async function createOrder(request: Request, input: CheckoutInput) {
           data: { usedCount: { increment: 1 } },
         })
       }
+      await enqueueOrderNotification(tx, {
+        eventKey: `order:${created.id}:placed`,
+        template: NotificationTemplate.ORDER_PLACED,
+        order: created,
+      })
       return created
     },
     { isolationLevel: "Serializable" }
   )
+  scheduleNotificationDelivery([`order:${order.id}:placed`])
   return { order, guestAccessToken }
 }
