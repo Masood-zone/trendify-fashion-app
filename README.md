@@ -4,6 +4,29 @@ Fashion Trendify GH is a full-stack Ghanaian fashion commerce platform built wit
 
 The storefront is designed around Ghanaian fashion and craftsmanship. Prices are stored in pesewas and presented in Ghana cedis (GHS), delivery addresses support all 16 regions of Ghana, and the application includes Ghana-focused phone handling and mobile money payment metadata.
 
+## Table of contents
+
+- [What is included](#what-is-included)
+- [Technology stack](#technology-stack)
+- [Application routes](#application-routes)
+- [API structure](#api-structure)
+- [Project structure](#project-structure)
+- [Prerequisites](#prerequisites)
+- [Local setup](#local-setup)
+- [Environment variables](#environment-variables)
+- [Database and data model](#database-and-data-model)
+- [Payment and inventory processing](#payment-and-inventory-processing)
+- [Authentication and authorization](#authentication-and-authorization)
+- [Media uploads](#media-uploads)
+- [Available scripts](#available-scripts)
+- [Validation](#validation)
+- [Architecture and design decisions](#architecture-and-design-decisions)
+- [Known limitations](#known-limitations)
+- [Production deployment checklist](#production-deployment-checklist)
+- [Web app manifest](#web-app-manifest)
+- [Operational notes](#operational-notes)
+- [License](#license)
+
 ## What is included
 
 ### Public storefront
@@ -82,6 +105,7 @@ The protected administrator portal is available under `/admin` and includes:
 - Cloudinary-backed administrator media uploads with a 20 MB request limit.
 - SMTP email delivery for verification and password-recovery codes.
 - SMS OTP integration through Uello Send.
+- Client-side state management with Zustand for checkout session, shopper context, and global UI state.
 
 ## Technology stack
 
@@ -90,6 +114,7 @@ The protected administrator portal is available under `/admin` and includes:
 | Framework            | Next.js 16 App Router and Turbopack                           |
 | UI                   | React 19, TypeScript, Tailwind CSS 4, shadcn/base-ui patterns |
 | Client data          | TanStack Query, Axios                                         |
+| Client state         | Zustand                                                       |
 | Forms and validation | React Hook Form, Zod                                          |
 | Authentication       | Better Auth with admin, email OTP, and phone-number plugins   |
 | Database             | PostgreSQL, Prisma ORM, Prisma PostgreSQL adapter             |
@@ -116,6 +141,23 @@ The protected administrator portal is available under `/admin` and includes:
 
 Application APIs live under `/api` and are grouped into storefront, customer, administrator, authentication, payments, uploads, and scheduled-job routes.
 
+## API structure
+
+API route handlers are organized under `app/api/` by domain:
+
+```
+app/api/
+  admin/          Administrator APIs (products, orders, customers, inventory, settings, etc.)
+  auth/           Better Auth authentication endpoints
+  cron/           Scheduled job endpoints (payment reconciliation, inventory reservations)
+  customer/       Customer-facing APIs (orders, wishlist, reviews, addresses, etc.)
+  payments/       Paystack payment initialization and verification
+  storefront/     Public storefront APIs (products, collections, categories, search, homepage, etc.)
+  uploads/        Cloudinary media upload endpoints (admin-only)
+```
+
+Each API group uses Zod validation at boundaries, role-aware middleware, and typed response helpers from `lib/api-response.ts`.
+
 ## Project structure
 
 ```text
@@ -127,22 +169,56 @@ app/
   checkout/           Multi-step checkout pages
   generated/prisma/   Generated Prisma client; not committed
   manifest.ts         Web app manifest
+  globals.css         Global styles and Tailwind configuration
+  layout.tsx          Root layout with providers, metadata, and theme setup
 components/
   admin/              Administrator screens and shared admin UI
+  brand/              Brand-related components
   checkout/           Checkout workflow components
   common/             Shared application components
   customer/           Customer authentication and account screens
+  providers/          React context providers (theme, auth, query client)
   storefront/         Storefront pages, shell, and product UI
-  ui/                 Reusable UI primitives
-lib/                  Authentication, database, API, payment, CSV, and utility code
+  ui/                 Reusable UI primitives (shadcn/base-ui)
+hooks/                Shared React hooks
+lib/
+  admin-api.ts        Admin API client helpers
+  auth.ts             Server-side auth utilities
+  auth-client.ts      Client-side auth configuration
+  axios.ts            Axios instance configuration
+  checkout-session.ts Checkout session state management
+  cloudinary/         Cloudinary upload and management utilities
+  csv.ts              CSV export helpers
+  customer-api.ts     Customer API client helpers
+  form-toast.ts       Form submission toast notifications
+  paystack/           Paystack payment integration utilities
+  prisma.ts           Prisma client singleton
+  safe-redirect.ts    Safe redirect URL validation
+  shopper-context.ts  Shopper context utilities
+  utils.ts            General utility functions
 prisma/
   migrations/         Versioned PostgreSQL migrations
   schema.prisma       Data model
   seed.ts             Administrator bootstrap script
+  prisma.config.ts    Prisma adapter configuration
 public/               Icons and other public assets
-services/             Domain services for admin, storefront, orders, inventory, and payments
+services/
+  admin/              Admin domain services
+  customer/           Customer domain services
+  inventory/          Inventory management services
+  notifications/      Email and SMS notification services
+  orders/             Order processing services
+  payments/           Payment processing services
+  queries/            Shared database query helpers
+  storefront/         Storefront domain services
+  uploads/            Upload handling services
 tests/                Commerce and utility tests
-types/                Shared TypeScript contracts
+types/
+  admin.ts            Administrator type contracts
+  customer.ts         Customer type contracts
+  index.ts            Shared type definitions
+  payments.ts         Payment type contracts
+  storefront.ts       Storefront type contracts
 ```
 
 ## Prerequisites
@@ -366,6 +442,26 @@ pnpm.cmd build
 
 The commerce test suite currently covers tax calculation, free-delivery thresholds, safe Ghana/GHS checkout defaults, safe authentication callbacks, and Ghana phone-number normalization.
 
+## Architecture and design decisions
+
+- **Server-first rendering.** Public storefront pages leverage React Server Components and the Next.js App Router for fast initial loads. Client-side query caching via TanStack Query is used only where interactive data (cart, wishlist, search results) requires it.
+- **Domain-oriented service layer.** Business logic lives in `services/` rather than route handlers. Each domain (orders, payments, inventory, storefront, admin, customer, uploads, notifications) has its own service module, keeping route handlers thin and testable.
+- **Money as integers.** All monetary values are stored as integer pesewas in the database and converted to GHS only for display. This eliminates floating-point rounding issues across tax, discount, and payment calculations.
+- **Snapshot order items.** Order items capture product name, variant, price, and image at purchase time so historical orders remain readable even when the catalogue changes.
+- **Idempotent operations.** Payment reconciliation, inventory reservation cleanup, and order state transitions are designed to be safely re-runnable, supporting both scheduled cron jobs and manual retries.
+- **Role-aware protection.** Both page layouts and API route handlers independently verify the caller's role, so a misconfigured layout cannot accidentally expose an admin route, and vice versa.
+- **CMS-driven homepage.** The homepage is composed of fixed canonical slots (hero, benefits, category grid, collection spotlight, product carousel, heritage story, regional trends, newsletter) managed through the administrator portal. Section content, visibility, and ordering are admin-configurable.
+- **Guest-first checkout.** Guest checkout is enabled by default and uses an HTTP-only cookie for cart persistence. When a guest creates an account or signs in, their cart is automatically transferred to the authenticated user.
+
+## Known limitations
+
+- **No Paystack webhook.** Payment verification relies on return-path redirects, administrator manual verification, and scheduled reconciliation. Real-time payment status updates from Paystack are not pushed to the application.
+- **No service worker.** The web app manifest supports installation to the home screen, but the application does not register a service worker and is not offline-capable.
+- **No real-time notifications.** There are no WebSocket or server-sent event connections for live order status updates or admin dashboard changes.
+- **Single-currency.** The application is hardcoded for GHS. Multi-currency support is not implemented.
+- **No multi-language support.** The interface is English-only. Localisation infrastructure is not in place.
+- **SMS OTP is optional.** Phone-based OTP delivery through Uello Send requires separate credentials and is not configured by default.
+
 ## Production deployment checklist
 
 1. Provision PostgreSQL and set the production `DATABASE_URL`.
@@ -381,7 +477,7 @@ The commerce test suite currently covers tax calculation, free-delivery threshol
 
 ## Web app manifest
 
-The App Router generates the manifest from `app/manifest.ts`. It provides the application name, description, theme colours, standalone display mode, and 192×192 and 512×512 branded icons. Apple home-screen and favicon metadata are configured in `app/layout.tsx`.
+The App Router generates the manifest from `app/manifest.ts`. It provides the application name, description, theme colours, standalone display mode, and 192x192 and 512x512 branded icons. Apple home-screen and favicon metadata are configured in `app/layout.tsx`.
 
 The manifest provides browser installation metadata only. The application does not currently register a service worker and should not be described as offline-capable.
 
@@ -394,6 +490,7 @@ The manifest provides browser installation metadata only. The application does n
 - The administrator seed does not overwrite an existing credential password.
 - Product reviews become public only after administrator approval.
 - Store support details and checkout behavior are editable from the administrator settings area.
+- The `hooks/` directory is reserved for shared React hooks as the codebase grows.
 
 ## License
 
