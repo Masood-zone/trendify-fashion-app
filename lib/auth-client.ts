@@ -5,7 +5,8 @@ import {
   phoneNumberClient,
 } from "better-auth/client/plugins"
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3000"
+const BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3000/api"
 
 export const authClient = createAuthClient({
   baseURL: BASE_URL,
