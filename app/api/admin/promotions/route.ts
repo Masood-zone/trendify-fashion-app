@@ -3,7 +3,7 @@ import { requireAdmin } from "@/lib/admin-api"
 import { invalid, ok, serverError } from "@/lib/api-response"
 import { prisma } from "@/lib/prisma"
 import { auditAdmin } from "@/services/admin/audit"
-export const promotionSchema = z.object({
+export const promotionBaseSchema = z.object({
   code: z
     .string()
     .trim()
@@ -24,6 +24,35 @@ export const promotionSchema = z.object({
   active: z.boolean().default(true),
   productIds: z.array(z.cuid()).optional(),
   categoryIds: z.array(z.cuid()).optional(),
+})
+export const promotionSchema = promotionBaseSchema.superRefine((data, ctx) => {
+  if (data.endsAt && data.endsAt <= data.startsAt)
+    ctx.addIssue({
+      code: "custom",
+      message: "End date must be after start date",
+      path: ["endsAt"],
+    })
+  if (data.type === "PERCENTAGE" && (data.value < 1 || data.value > 100))
+    ctx.addIssue({
+      code: "custom",
+      message: "Percentage must be between 1 and 100",
+      path: ["value"],
+    })
+  if (data.type === "FIXED_AMOUNT" && data.value < 1)
+    ctx.addIssue({
+      code: "custom",
+      message: "Fixed discount must be positive",
+      path: ["value"],
+    })
+  if (
+    !data.appliesToAll &&
+    !(data.productIds?.length || data.categoryIds?.length)
+  )
+    ctx.addIssue({
+      code: "custom",
+      message: "A scoped promotion requires at least one product or category",
+      path: ["appliesToAll"],
+    })
 })
 export async function GET(request: Request) {
   const guard = await requireAdmin(request)

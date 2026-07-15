@@ -4,6 +4,7 @@ import { requireAdmin } from "@/lib/admin-api"
 import { fail, invalid, ok, serverError } from "@/lib/api-response"
 import { prisma } from "@/lib/prisma"
 import { auditAdmin } from "@/services/admin/audit"
+import { releaseInventory } from "@/services/inventory/inventory"
 const schema = z.object({
   status: z.enum([
     "PROCESSING",
@@ -11,16 +12,15 @@ const schema = z.object({
     "OUT_FOR_DELIVERY",
     "DELIVERED",
     "CANCELLED",
-    "REFUNDED",
   ]),
   note: z.string().max(500).optional(),
 })
 const transitions: Record<string, string[]> = {
-  CONFIRMED: ["PROCESSING", "CANCELLED", "REFUNDED"],
-  PROCESSING: ["SHIPPED", "CANCELLED", "REFUNDED"],
-  SHIPPED: ["OUT_FOR_DELIVERY", "DELIVERED", "REFUNDED"],
-  OUT_FOR_DELIVERY: ["DELIVERED", "REFUNDED"],
-  DELIVERED: ["REFUNDED"],
+  PENDING_PAYMENT: ["CANCELLED"],
+  CONFIRMED: ["PROCESSING", "CANCELLED"],
+  PROCESSING: ["SHIPPED", "CANCELLED"],
+  SHIPPED: ["OUT_FOR_DELIVERY", "DELIVERED"],
+  OUT_FOR_DELIVERY: ["DELIVERED"],
 }
 export async function PATCH(
   request: Request,
@@ -41,6 +41,12 @@ export async function PATCH(
       )
     const status = parsed.data.status as OrderStatus
     const order = await prisma.$transaction(async (tx) => {
+      if (
+        status === OrderStatus.CANCELLED &&
+        current.status === OrderStatus.PENDING_PAYMENT
+      ) {
+        await releaseInventory(tx, id)
+      }
       const updated = await tx.order.update({
         where: { id },
         data: {

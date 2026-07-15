@@ -46,12 +46,7 @@ export function AdminShell({
   const [searchOpen, setSearchOpen] = useState(false)
 
   useEffect(() => {
-    setMobileOpen(false)
-  }, [pathname])
-
-  useEffect(() => {
     if (query.trim().length < 2) {
-      setResults(null)
       return
     }
     const timer = window.setTimeout(async () => {
@@ -77,7 +72,7 @@ export function AdminShell({
   const sidebar = (
     <div className="flex h-full flex-col bg-surface px-0 py-6">
       <Link href="/admin" className="px-6 pb-6">
-        <span className="block font-heading text-2xl font-bold leading-tight">
+        <span className="block font-heading text-2xl leading-tight font-bold">
           Fashion Trendify GH
         </span>
         <span className="type-label mt-1 block text-muted-foreground">
@@ -87,13 +82,12 @@ export function AdminShell({
       <nav className="space-y-1" aria-label="Administrator navigation">
         {navigation.map(([href, icon, label]) => {
           const active =
-            href === "/admin"
-              ? pathname === href
-              : pathname.startsWith(href)
+            href === "/admin" ? pathname === href : pathname.startsWith(href)
           return (
             <Link
               key={href}
               href={href}
+              onClick={() => setMobileOpen(false)}
               className={cn(
                 "flex items-center gap-3 border-r-4 border-transparent px-6 py-3 text-sm transition-colors",
                 active
@@ -122,7 +116,7 @@ export function AdminShell({
         <button
           type="button"
           onClick={logout}
-          className="flex w-full items-center gap-3 px-6 py-3 text-sm text-error hover:bg-error-container"
+          className="hover:bg-error-container flex w-full items-center gap-3 px-6 py-3 text-sm text-error"
         >
           <MaterialSymbol icon="logout" className="text-xl" /> Logout
         </button>
@@ -164,7 +158,13 @@ export function AdminShell({
             />
             <input
               value={query}
-              onChange={(event) => setQuery(event.target.value)}
+              onChange={(event) => {
+                setQuery(event.target.value)
+                if (event.target.value.trim().length < 2) {
+                  setResults(null)
+                  setSearchOpen(false)
+                }
+              }}
               onFocus={() => results && setSearchOpen(true)}
               className="h-10 w-full rounded-md border-0 bg-surface-container-low pr-4 pl-10 text-sm outline-none focus:ring-1 focus:ring-primary"
               placeholder="Search products, orders, customers..."
@@ -227,7 +227,11 @@ export function AdminShell({
             <div className="grid size-10 place-items-center overflow-hidden rounded-full border border-outline-variant bg-surface-container">
               {user.image ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={user.image} alt="" className="size-full object-cover" />
+                <img
+                  src={user.image}
+                  alt=""
+                  className="size-full object-cover"
+                />
               ) : (
                 <span className="font-heading font-bold">
                   {user.name.charAt(0).toUpperCase()}

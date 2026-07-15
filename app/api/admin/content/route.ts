@@ -3,6 +3,7 @@ import { requireAdmin } from "@/lib/admin-api"
 import { invalid, ok, serverError } from "@/lib/api-response"
 import { prisma } from "@/lib/prisma"
 import { auditAdmin } from "@/services/admin/audit"
+import sanitizeHtml from "sanitize-html"
 export const contentSchema = z.object({
   type: z.enum(["PAGE", "POLICY", "FAQ"]).default("PAGE"),
   slug: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
@@ -36,7 +37,9 @@ export async function POST(request: Request) {
   try {
     const parsed = contentSchema.safeParse(await request.json())
     if (!parsed.success) return invalid(parsed.error)
-    const item = await prisma.contentPage.create({ data: parsed.data })
+    const item = await prisma.contentPage.create({
+      data: { ...parsed.data, body: sanitizeHtml(parsed.data.body) },
+    })
     await auditAdmin(
       guard.session.user.id,
       "content.create",

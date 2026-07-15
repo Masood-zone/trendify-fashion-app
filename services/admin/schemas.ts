@@ -9,15 +9,17 @@ export const slug = z
 export const productSchema = z.object({
   name: z.string().trim().min(2).max(160),
   slug,
-  description: z.string().trim().min(10),
+  description: z.string().trim().max(20000).default(""),
   shortDescription: z.string().max(300).optional(),
   brandId: z.cuid().optional().nullable(),
   artisanId: z.cuid().optional().nullable(),
   sizeGuideId: z.cuid().optional().nullable(),
   materialSummary: z.string().max(500).optional(),
   careInstructions: z.string().max(2000).optional(),
-  basePricePesewas: z.int().nonnegative(),
+  audience: z.enum(["MEN", "WOMEN", "UNISEX"]).optional().nullable(),
+  basePricePesewas: z.int().nonnegative().default(0),
   compareAtPricePesewas: z.int().nonnegative().optional().nullable(),
+  costPricePesewas: z.int().nonnegative().optional().nullable(),
   status: z.enum(["DRAFT", "ACTIVE", "ARCHIVED"]).default("DRAFT"),
   madeInGhana: z.boolean().default(false),
   featured: z.boolean().default(false),
@@ -59,6 +61,26 @@ export const productPayloadSchema = productSchema.extend({
       measurementUnit: z.string().max(20).default("cm"),
       measurements: z.record(z.string(), z.unknown()),
     })
+    .optional(),
+  variants: z
+    .array(
+      z.object({
+        sku: z.string().trim().min(2).max(80),
+        sizeLabel: z.string().max(50).optional().nullable(),
+        colorName: z.string().max(80).optional().nullable(),
+        colorHex: z
+          .string()
+          .regex(/^#[0-9a-fA-F]{6}$/)
+          .optional()
+          .nullable(),
+        pricePesewas: z.int().nonnegative(),
+        compareAtPricePesewas: z.int().nonnegative().optional().nullable(),
+        stockQuantity: z.int().nonnegative().default(0),
+        lowStockThreshold: z.int().nonnegative().default(5),
+        weightGrams: z.int().positive().optional().nullable(),
+        active: z.boolean().default(true),
+      })
+    )
     .optional(),
 })
 export const variantSchema = z.object({

@@ -2,7 +2,32 @@ import { requireAdmin } from "@/lib/admin-api"
 import { invalid, ok, serverError } from "@/lib/api-response"
 import { prisma } from "@/lib/prisma"
 import { auditAdmin } from "@/services/admin/audit"
-import { promotionSchema } from "@/app/api/admin/promotions/route"
+import { promotionBaseSchema } from "@/app/api/admin/promotions/route"
+export async function GET(
+  request: Request,
+  context: { params: Promise<{ promotionId: string }> }
+) {
+  const guard = await requireAdmin(request)
+  if ("response" in guard) return guard.response
+  try {
+    const item = await prisma.promotion.findFirst({
+      where: { id: (await context.params).promotionId, deletedAt: null },
+      include: {
+        products: true,
+        categories: true,
+        _count: { select: { redemptions: true } },
+      },
+    })
+    return item
+      ? ok(item)
+      : Response.json(
+          { success: false, message: "Promotion not found" },
+          { status: 404 }
+        )
+  } catch (error) {
+    return serverError(error)
+  }
+}
 export async function PATCH(
   request: Request,
   context: { params: Promise<{ promotionId: string }> }
@@ -10,7 +35,7 @@ export async function PATCH(
   const guard = await requireAdmin(request)
   if ("response" in guard) return guard.response
   try {
-    const parsed = promotionSchema.partial().safeParse(await request.json())
+    const parsed = promotionBaseSchema.partial().safeParse(await request.json())
     if (!parsed.success) return invalid(parsed.error)
     const id = (await context.params).promotionId
     const { productIds, categoryIds, ...data } = parsed.data

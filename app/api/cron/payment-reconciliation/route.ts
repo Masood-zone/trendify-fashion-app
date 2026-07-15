@@ -3,7 +3,7 @@ import { reconcilePendingPaystackPayments } from "@/services/payments/payment-wo
 
 export async function GET(request: Request) {
   if (
-    process.env.NODE_ENV === "production" &&
+    !process.env.CRON_SECRET ||
     request.headers.get("authorization") !== `Bearer ${process.env.CRON_SECRET}`
   ) {
     return fail("Unauthorized", 401)

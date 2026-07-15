@@ -3,18 +3,33 @@ import { invalid, ok, serverError } from "@/lib/api-response"
 import { prisma } from "@/lib/prisma"
 import { auditAdmin } from "@/services/admin/audit"
 import { productPayloadSchema } from "@/services/admin/schemas"
+import sanitizeHtml from "sanitize-html"
 export async function GET(request: Request) {
   const guard = await requireAdmin(request)
   if ("response" in guard) return guard.response
   try {
     const q = new URL(request.url).searchParams.get("q")
+    const includeArchived =
+      new URL(request.url).searchParams.get("includeArchived") === "true"
     return ok(
       await prisma.product.findMany({
         where: {
-          deletedAt: null,
+          ...(includeArchived ? {} : { deletedAt: null }),
           ...(q ? { name: { contains: q, mode: "insensitive" } } : {}),
         },
-        include: { brand: true, artisan: true, variants: true },
+        include: {
+          brand: true,
+          artisan: true,
+          variants: true,
+          media: {
+            include: { mediaAsset: true },
+            orderBy: { sortOrder: "asc" },
+          },
+          categories: {
+            include: { category: true },
+            orderBy: { sortOrder: "asc" },
+          },
+        },
         orderBy: { updatedAt: "desc" },
       })
     )
@@ -35,8 +50,28 @@ export async function POST(request: Request) {
       media,
       recommendations,
       sizeGuide,
+      variants,
       ...data
     } = parsed.data
+    if (data.status === "ACTIVE") {
+      const missing = [
+        !data.description && "description",
+        !data.audience && "audience",
+        !categoryIds?.length && "category",
+        !(data.basePricePesewas > 0) && "regular price",
+        !(data.costPricePesewas && data.costPricePesewas > 0) && "cost price",
+        !media?.some((item) => item.primary) && "primary image",
+        !variants?.some((item) => item.active) && "active variant",
+      ].filter(Boolean)
+      if (missing.length)
+        return Response.json(
+          {
+            success: false,
+            message: `Publishing requires: ${missing.join(", ")}`,
+          },
+          { status: 422 }
+        )
+    }
     const product = await prisma.$transaction(async (tx) => {
       const guide = sizeGuide
         ? await tx.sizeGuide.create({
@@ -49,6 +84,7 @@ export async function POST(request: Request) {
       return tx.product.create({
         data: {
           ...data,
+          description: sanitizeHtml(data.description),
           sizeGuideId: guide?.id ?? data.sizeGuideId,
           categories: categoryIds
             ? {
@@ -80,6 +116,7 @@ export async function POST(request: Request) {
           recommendations: recommendations
             ? { create: recommendations }
             : undefined,
+          variants: variants ? { create: variants } : undefined,
         },
         include: {
           variants: true,

@@ -3,6 +3,7 @@ import { fail, invalid, ok, serverError } from "@/lib/api-response"
 import { prisma } from "@/lib/prisma"
 import { auditAdmin } from "@/services/admin/audit"
 import { productPayloadSchema } from "@/services/admin/schemas"
+import sanitizeHtml from "sanitize-html"
 export async function GET(
   request: Request,
   context: { params: Promise<{ productId: string }> }
@@ -48,6 +49,7 @@ export async function PATCH(
       media,
       recommendations,
       sizeGuide,
+      variants,
       ...data
     } = parsed.data
     const product = await prisma.$transaction(async (tx) => {
@@ -123,9 +125,57 @@ export async function PATCH(
           data: recommendations.map((item) => ({ ...item, productId: id })),
         })
       }
+      if (variants) {
+        const existing = await tx.productVariant.findMany({
+          where: { productId: id, deletedAt: null },
+          select: { id: true },
+        })
+        if (existing.length)
+          throw new Error(
+            "Edit existing variants from Inventory; the product form can only add variants to products without variants"
+          )
+        await tx.productVariant.createMany({
+          data: variants.map((variant) => ({ ...variant, productId: id })),
+        })
+      }
+      if (data.status === "ACTIVE") {
+        const current = await tx.product.findUniqueOrThrow({
+          where: { id },
+          include: {
+            media: true,
+            variants: { where: { active: true, deletedAt: null } },
+            categories: true,
+          },
+        })
+        const missing = [
+          !(data.description ?? current.description) && "description",
+          !(data.audience ?? current.audience) && "audience",
+          !(categoryIds?.length ?? current.categories.length) && "category",
+          !((data.basePricePesewas ?? current.basePricePesewas) > 0) &&
+            "regular price",
+          !((data.costPricePesewas ?? current.costPricePesewas ?? 0) > 0) &&
+            "cost price",
+          !(
+            media?.some((item) => item.primary) ??
+            current.media.some((item) => item.primary)
+          ) && "primary image",
+          !(
+            variants?.some((item) => item.active) ?? current.variants.length > 0
+          ) && "active variant",
+        ].filter(Boolean)
+        if (missing.length)
+          throw new Error(`Publishing requires: ${missing.join(", ")}`)
+      }
       return tx.product.update({
         where: { id },
-        data: { ...data, sizeGuideId },
+        data: {
+          ...data,
+          description:
+            data.description === undefined
+              ? undefined
+              : sanitizeHtml(data.description),
+          sizeGuideId,
+        },
         include: {
           variants: true,
           media: true,

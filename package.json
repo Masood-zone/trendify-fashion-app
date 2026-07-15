@@ -1,6 +1,6 @@
 {
   "name": "trendify-fashion-app",
-  "version": "0.0.1",
+  "version": "1.0.1",
   "type": "module",
   "private": true,
   "scripts": {

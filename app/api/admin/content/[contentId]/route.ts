@@ -3,6 +3,7 @@ import { invalid, ok, serverError } from "@/lib/api-response"
 import { prisma } from "@/lib/prisma"
 import { auditAdmin } from "@/services/admin/audit"
 import { contentSchema } from "@/app/api/admin/content/route"
+import sanitizeHtml from "sanitize-html"
 export async function PATCH(
   request: Request,
   context: { params: Promise<{ contentId: string }> }
@@ -15,7 +16,13 @@ export async function PATCH(
     const id = (await context.params).contentId
     const item = await prisma.contentPage.update({
       where: { id },
-      data: parsed.data,
+      data: {
+        ...parsed.data,
+        body:
+          parsed.data.body === undefined
+            ? undefined
+            : sanitizeHtml(parsed.data.body),
+      },
     })
     await auditAdmin(guard.session.user.id, "content.update", "ContentPage", id)
     return ok(item)
