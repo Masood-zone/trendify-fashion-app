@@ -19,38 +19,41 @@ async function main() {
     throw new Error("ADMIN_PASSWORD must contain at least 8 characters")
   }
 
-  const administrator = await prisma.$transaction(async (tx) => {
-    const existing = await tx.user.findUnique({ where: { email } })
-    const user = existing
-      ? await tx.user.update({
-          where: { id: existing.id },
-          data: { name, role: "ADMIN", banned: false, deletedAt: null },
-        })
-      : await tx.user.create({
+  const administrator = await prisma.$transaction(
+    async (tx) => {
+      const existing = await tx.user.findUnique({ where: { email } })
+      const user = existing
+        ? await tx.user.update({
+            where: { id: existing.id },
+            data: { name, role: "ADMIN", banned: false, deletedAt: null },
+          })
+        : await tx.user.create({
+            data: {
+              name,
+              email,
+              role: "ADMIN",
+              emailVerified: true,
+            },
+          })
+
+      const credential = await tx.account.findFirst({
+        where: { userId: user.id, providerId: "credential" },
+      })
+      if (!credential) {
+        await tx.account.create({
           data: {
-            name,
-            email,
-            role: "ADMIN",
-            emailVerified: true,
+            id: randomUUID(),
+            accountId: user.id,
+            providerId: "credential",
+            userId: user.id,
+            password: await hashPassword(password),
           },
         })
-
-    const credential = await tx.account.findFirst({
-      where: { userId: user.id, providerId: "credential" },
-    })
-    if (!credential) {
-      await tx.account.create({
-        data: {
-          id: randomUUID(),
-          accountId: user.id,
-          providerId: "credential",
-          userId: user.id,
-          password: await hashPassword(password),
-        },
-      })
-    }
-    return user
-  })
+      }
+      return user
+    },
+    { maxWait: 20_000, timeout: 60_000 }
+  )
 
   console.log(`Administrator ready: ${administrator.email}`)
   console.log("Existing credential passwords are preserved on repeated runs.")

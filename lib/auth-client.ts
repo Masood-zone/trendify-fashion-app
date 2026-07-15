@@ -5,11 +5,12 @@ import {
   phoneNumberClient,
 } from "better-auth/client/plugins"
 
-const BASE_URL =
+const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3000/api"
+const AUTH_BASE_URL = `${API_BASE_URL.replace(/\/+$/, "")}/auth`
 
 export const authClient = createAuthClient({
-  baseURL: BASE_URL,
+  baseURL: AUTH_BASE_URL,
   plugins: [adminClient(), emailOTPClient(), phoneNumberClient()],
 })
 
