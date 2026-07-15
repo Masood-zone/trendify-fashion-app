@@ -2,7 +2,8 @@ import { requireAdmin } from "@/lib/admin-api"
 import { fail, invalid, ok, serverError } from "@/lib/api-response"
 import { prisma } from "@/lib/prisma"
 import { auditAdmin } from "@/services/admin/audit"
-import { productPayloadSchema } from "@/services/admin/schemas"
+import { productConflictResponse } from "@/services/admin/product-errors"
+import { productPatchPayloadSchema } from "@/services/admin/schemas"
 import sanitizeHtml from "sanitize-html"
 export async function GET(
   request: Request,
@@ -37,9 +38,7 @@ export async function PATCH(
   const guard = await requireAdmin(request)
   if ("response" in guard) return guard.response
   try {
-    const parsed = productPayloadSchema
-      .partial()
-      .safeParse(await request.json())
+    const parsed = productPatchPayloadSchema.safeParse(await request.json())
     if (!parsed.success) return invalid(parsed.error)
     const id = (await context.params).productId
     const {
@@ -190,6 +189,8 @@ export async function PATCH(
     await auditAdmin(guard.session.user.id, "product.update", "Product", id)
     return ok(product)
   } catch (error) {
+    const conflict = productConflictResponse(error)
+    if (conflict) return conflict
     return serverError(error)
   }
 }

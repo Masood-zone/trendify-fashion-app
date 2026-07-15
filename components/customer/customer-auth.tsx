@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import api from "@/lib/axios"
 import { authClient } from "@/lib/auth-client"
+import { toastFormErrors } from "@/lib/form-toast"
 import { normalizeGhanaPhone, safeInternalPath } from "@/lib/safe-redirect"
 
 const loginImage =
@@ -139,24 +140,27 @@ export function LoginForm() {
             rememberMe: values.rememberMe,
           })
       if (result.error) {
+        const message = result.error.message || "Login failed"
         form.setError("root", {
-          message: result.error.message || "Login failed",
+          message,
         })
+        toast.error(message)
         return
       }
       if (result.data?.user.role !== "CUSTOMER") {
         await authClient.signOut()
-        form.setError("root", {
-          message: "Use the administrator login for this account",
-        })
+        const message = "Use the administrator login for this account"
+        form.setError("root", { message })
+        toast.error(message)
         return
       }
+      toast.success("Welcome back to Trendify")
       router.push(callback)
       router.refresh()
     } catch {
-      form.setError("root", {
-        message: "Login could not be completed. Please try again.",
-      })
+      const message = "Login could not be completed. Please try again."
+      form.setError("root", { message })
+      toast.error(message)
     }
   }
 
@@ -167,7 +171,7 @@ export function LoginForm() {
       </p>
       <form
         className="mt-10 space-y-6"
-        onSubmit={form.handleSubmit(submit)}
+        onSubmit={form.handleSubmit(submit, toastFormErrors)}
         noValidate
       >
         <Field
@@ -261,9 +265,11 @@ export function RegisterForm() {
         password: values.password,
       })
       if (result.error) {
+        const message = result.error.message || "Account could not be created"
         form.setError("root", {
-          message: result.error.message || "Account could not be created",
+          message,
         })
+        toast.error(message)
         return
       }
       sessionStorage.setItem(
@@ -280,13 +286,17 @@ export function RegisterForm() {
             : undefined,
         })
       )
+      toast.success(
+        "Account created. Check your email for the verification code."
+      )
       router.push(
         `/verify-email?email=${encodeURIComponent(email)}&callbackURL=${encodeURIComponent(callback)}`
       )
     } catch {
-      form.setError("root", {
-        message: "Account creation could not be completed. Please try again.",
-      })
+      const message =
+        "Account creation could not be completed. Please try again."
+      form.setError("root", { message })
+      toast.error(message)
     }
   }
 
@@ -297,7 +307,7 @@ export function RegisterForm() {
       </p>
       <form
         className="mt-8 grid gap-5 sm:grid-cols-2"
-        onSubmit={form.handleSubmit(submit)}
+        onSubmit={form.handleSubmit(submit, toastFormErrors)}
         noValidate
       >
         <Field
@@ -417,11 +427,14 @@ export function VerifyEmailForm() {
         otp: values.otp,
       })
       if (result.error) {
+        const message = result.error.message || "Verification failed"
         form.setError("root", {
-          message: result.error.message || "Verification failed",
+          message,
         })
+        toast.error(message)
         return
       }
+      toast.success("Email verified successfully")
       try {
         const pendingProfile = JSON.parse(
           sessionStorage.getItem("trendify_pending_profile") || "null"
@@ -437,15 +450,21 @@ export function VerifyEmailForm() {
       router.push(callback)
       router.refresh()
     } catch {
-      form.setError("root", {
-        message: "Verification could not be completed. Please try again.",
-      })
+      const message = "Verification could not be completed. Please try again."
+      form.setError("root", { message })
+      toast.error(message)
     }
   }
 
   async function resendCode() {
     const emailIsValid = await form.trigger("email")
-    if (!emailIsValid) return
+    if (!emailIsValid) {
+      toast.error(
+        form.getFieldState("email").error?.message ||
+          "Enter a valid email address"
+      )
+      return
+    }
     try {
       const result = await authClient.emailOtp.sendVerificationOtp({
         email: form.getValues("email").toLowerCase(),
@@ -465,7 +484,7 @@ export function VerifyEmailForm() {
       </p>
       <form
         className="mt-10 space-y-6"
-        onSubmit={form.handleSubmit(submit)}
+        onSubmit={form.handleSubmit(submit, toastFormErrors)}
         noValidate
       >
         <Field label="Email" error={form.formState.errors.email?.message}>
@@ -531,15 +550,18 @@ export function ForgotPasswordForm() {
         email: values.email.toLowerCase(),
       })
       if (result.error) {
-        requestForm.setError("root", { message: result.error.message })
+        const message = result.error.message || "Reset request failed"
+        requestForm.setError("root", { message })
+        toast.error(message)
         return
       }
       setStep("reset")
       toast.success("Check your email for the reset code")
     } catch {
-      requestForm.setError("root", {
-        message: "The reset request could not be completed. Please try again.",
-      })
+      const message =
+        "The reset request could not be completed. Please try again."
+      requestForm.setError("root", { message })
+      toast.error(message)
     }
   }
 
@@ -552,15 +574,17 @@ export function ForgotPasswordForm() {
         password: values.password,
       })
       if (result.error) {
-        resetForm.setError("root", { message: result.error.message })
+        const message = result.error.message || "Password reset failed"
+        resetForm.setError("root", { message })
+        toast.error(message)
         return
       }
       toast.success("Password updated. You can now sign in.")
       router.push("/login")
     } catch {
-      resetForm.setError("root", {
-        message: "The password could not be updated. Please try again.",
-      })
+      const message = "The password could not be updated. Please try again."
+      resetForm.setError("root", { message })
+      toast.error(message)
     }
   }
 
@@ -573,7 +597,7 @@ export function ForgotPasswordForm() {
           </p>
           <form
             className="mt-10 space-y-6"
-            onSubmit={requestForm.handleSubmit(requestCode)}
+            onSubmit={requestForm.handleSubmit(requestCode, toastFormErrors)}
             noValidate
           >
             <Field
@@ -607,7 +631,7 @@ export function ForgotPasswordForm() {
           </p>
           <form
             className="mt-10 space-y-5"
-            onSubmit={resetForm.handleSubmit(resetPassword)}
+            onSubmit={resetForm.handleSubmit(resetPassword, toastFormErrors)}
             noValidate
           >
             <Field

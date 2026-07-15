@@ -60,7 +60,7 @@ export async function evaluatePromotion(
     throw new Error("Promotion does not apply to items in this cart")
   let discountPesewas =
     promotion.type === PromotionType.PERCENTAGE
-      ? Math.floor((eligibleSubtotalPesewas * promotion.value) / 10000)
+      ? Math.floor((eligibleSubtotalPesewas * promotion.value) / 100)
       : promotion.type === PromotionType.FIXED_AMOUNT
         ? promotion.value
         : 0

@@ -2,6 +2,7 @@ import { requireAdmin } from "@/lib/admin-api"
 import { invalid, ok, serverError } from "@/lib/api-response"
 import { prisma } from "@/lib/prisma"
 import { auditAdmin } from "@/services/admin/audit"
+import { productConflictResponse } from "@/services/admin/product-errors"
 import { productPayloadSchema } from "@/services/admin/schemas"
 import sanitizeHtml from "sanitize-html"
 export async function GET(request: Request) {
@@ -137,6 +138,8 @@ export async function POST(request: Request) {
     )
     return ok(product, { status: 201 })
   } catch (error) {
+    const conflict = productConflictResponse(error)
+    if (conflict) return conflict
     return serverError(error)
   }
 }

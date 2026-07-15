@@ -28,7 +28,7 @@ export const productSchema = z.object({
   seoTitle: z.string().max(160).optional(),
   seoDescription: z.string().max(300).optional(),
 })
-export const productPayloadSchema = productSchema.extend({
+const productPayloadBaseSchema = productSchema.extend({
   categoryIds: z.array(z.cuid()).optional(),
   collectionIds: z.array(z.cuid()).optional(),
   tags: z
@@ -83,6 +83,61 @@ export const productPayloadSchema = productSchema.extend({
     )
     .optional(),
 })
+
+function addProductPayloadRefinements<Schema extends z.ZodType>(schema: Schema) {
+  return schema.superRefine((payload, context) => {
+    const data = payload as Partial<z.infer<typeof productPayloadBaseSchema>>
+
+    const rejectDuplicates = <Item>(
+      items: Item[] | undefined,
+      key: (item: Item) => string,
+      path: string,
+      message: string
+    ) => {
+      const seen = new Set<string>()
+      items?.forEach((item, index) => {
+        const value = key(item)
+        if (seen.has(value)) {
+          context.addIssue({ code: "custom", path: [path, index], message })
+        }
+        seen.add(value)
+      })
+    }
+
+    const primaryIndexes =
+      data.media
+        ?.map((item, index) => (item.primary ? index : -1))
+        .filter((index) => index >= 0) ?? []
+    for (const index of primaryIndexes.slice(1)) {
+      context.addIssue({
+        code: "custom",
+        path: ["media", index, "primary"],
+        message: "Only one product image can be primary",
+      })
+    }
+
+    rejectDuplicates(data.media, (item) => item.mediaAssetId, "media", "Each media asset can only be attached once")
+    rejectDuplicates(data.categoryIds, (item) => item, "categoryIds", "Each category can only be selected once")
+    rejectDuplicates(data.collectionIds, (item) => item, "collectionIds", "Each collection can only be selected once")
+    rejectDuplicates(data.tags, (item) => item.slug.toLowerCase(), "tags", "Each tag can only be selected once")
+    rejectDuplicates(
+      data.recommendations,
+      (item) => `${item.recommendedProductId}:${item.type}`,
+      "recommendations",
+      "Each recommendation and type can only be selected once"
+    )
+    rejectDuplicates(data.variants, (item) => item.sku.toLowerCase(), "variants", "Each SKU must be unique")
+    rejectDuplicates(
+      data.variants,
+      (item) => `${item.sizeLabel?.trim().toLowerCase() ?? ""}:${item.colorName?.trim().toLowerCase() ?? ""}`,
+      "variants",
+      "Each size and colour combination must be unique"
+    )
+  })
+}
+
+export const productPayloadSchema = addProductPayloadRefinements(productPayloadBaseSchema)
+export const productPatchPayloadSchema = addProductPayloadRefinements(productPayloadBaseSchema.partial())
 export const variantSchema = z.object({
   sku: z.string().trim().min(2).max(80),
   sizeLabel: z.string().max(50).optional().nullable(),

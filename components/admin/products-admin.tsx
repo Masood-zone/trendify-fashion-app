@@ -25,6 +25,10 @@ import { Input } from "@/components/ui/input"
 import { MaterialSymbol } from "@/components/common/MaterialSymbol"
 import FileUpload from "@/components/common/FileUpload"
 import { RichTextEditor } from "@/components/admin/rich-text-editor"
+import {
+  appendProductMedia,
+  removeProductMedia,
+} from "@/services/admin/product-media"
 
 type Variant = {
   id?: string
@@ -713,17 +717,18 @@ export function ProductEditor({ productId }: { productId?: string }) {
               otherText="PNG, JPG or WEBP up to 20MB"
               onFilesUploaded={(files) => {
                 const list = Array.isArray(files) ? files : files ? [files] : []
-                setMedia((current) => [
-                  ...current,
-                  ...list
-                    .filter((file) => file.upload)
-                    .map((file) => ({
-                      mediaAssetId: file.upload!.id,
-                      url: file.upload!.url,
-                      altText: form.name,
-                      primary: current.length === 0,
-                    })),
-                ])
+                setMedia((current) =>
+                  appendProductMedia(
+                    current,
+                    list
+                      .filter((file) => file.upload)
+                      .map((file) => ({
+                        mediaAssetId: file.upload!.id,
+                        url: file.upload!.url,
+                        altText: form.name,
+                      }))
+                  )
+                )
               }}
             />
             {media.map((item, index) => (
@@ -767,7 +772,7 @@ export function ProductEditor({ productId }: { productId?: string }) {
                   size="xs"
                   variant="ghost"
                   onClick={() =>
-                    setMedia((current) => current.filter((_, i) => i !== index))
+                    setMedia((current) => removeProductMedia(current, index))
                   }
                 >
                   Remove

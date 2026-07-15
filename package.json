@@ -11,9 +11,12 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate deploy",
     "seed:admin": "tsx prisma/seed.ts",
+    "seed:simulation": "tsx prisma/seed-simulation.ts",
+    "seed:simulation:verify": "tsx prisma/verify-simulation.ts",
     "lint": "eslint",
     "format": "prettier --write \"**/*.{ts,tsx}\"",
     "test:commerce": "tsx --test tests/commerce.test.ts",
+    "test:admin-products": "tsx --test tests/admin-products.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
