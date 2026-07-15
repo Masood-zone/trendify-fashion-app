@@ -1,4 +1,4 @@
-import type { Metadata } from "next"
+import type { Metadata, Viewport } from "next"
 import { Geist_Mono, Manrope, Playfair_Display } from "next/font/google"
 import { cn } from "@/lib/utils"
 
@@ -24,6 +24,23 @@ export const metadata: Metadata = {
   title: "Fashion Trendify GH | Modern Ghanaian Heritage",
   description:
     "Contemporary Ghanaian fashion, local craftsmanship, and global style rooted in heritage.",
+  applicationName: "Fashion Trendify GH",
+  icons: {
+    icon: [
+      { url: "/favicon-16x16.png", sizes: "16x16", type: "image/png" },
+      { url: "/favicon-32x32.png", sizes: "32x32", type: "image/png" },
+    ],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180" }],
+  },
+  appleWebApp: {
+    capable: true,
+    title: "Trendify GH",
+    statusBarStyle: "default",
+  },
+}
+
+export const viewport: Viewport = {
+  themeColor: "#6f1d2c",
 }
 
 export default function RootLayout({
